@@ -8,7 +8,7 @@
 
 This repository contains a blockchain simulator built with the help of Tongyi Lingma (通义灵码), designed to simulate typical blockchain systems and consensus algorithms. The project aims to provide an educational and research platform for understanding how different consensus mechanisms perform under various network conditions.
 
-This project is a collaborative effort between [Linpeng Jia](jialinpeng@ict.ac.cn) and Tongyi Lingma (通义灵码), demonstrating how human expertise combined with AI coding assistance can create sophisticated distributed systems.
+This project is a collaborative effort between [Linpeng Jia](https://github.com/jialinpeng) and Tongyi Lingma (通义灵码), demonstrating how human expertise combined with AI coding assistance can create sophisticated distributed systems.
 
 ## Motivation
 
@@ -108,7 +108,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Authors
 
-- **Linpeng Jia** - *Initial work* - [jialinpeng@ict.ac.cn](jialinpeng@ict.ac.cn)
+- **Linpeng Jia** - *Initial work* - [https://github.com/jialinpeng](https://github.com/jialinpeng)
 - **Tongyi Lingma** - *AI Assistant* - Part of Alibaba Cloud's Tongyi Lab
 
 ## Acknowledgments
