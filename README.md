@@ -25,12 +25,12 @@
 - 实时性能指标收集
 - 交易确认时间分析
 - 吞吐量(TPS)测量与可视化
-- 以JSON格式导出详细的区块和交易数据
+- 以压缩JSON格式导出详细的区块和交易数据
 - 不同共识算法和网络协议之间的性能比较
 
 ### 可视化
 - 按区块高度划分的TPS（每秒交易数）图表
-- 交易确认时间分布直方图
+- 交易确认时间累积分布函数(CDF)图
 - 自动生成性能报告
 
 ## 快速开始
@@ -85,7 +85,7 @@ ai-blockchain/
 ├── simulator.py            # 主模拟器模块，包含区块链模拟器主类
 ├── main.py                 # 主程序模块，包含交互式设置和程序入口
 ├── requirements.txt        # 项目依赖
-├── data/                   # 模拟输出数据
+├── data/                   # 模拟输出数据（压缩格式）
 ├── results/                # 性能图表和图形
 └── README.md              # 本文件
 ```
@@ -102,7 +102,7 @@ ai-blockchain/
 | `transaction_send_rate` | 交易发送速率 (txs/sec) | None |
 | `max_transactions_per_block` | 每个区块的最大交易数 | 256 |
 | `transaction_size` | 每个交易的大小 (字节) | 300 |
-| `block_interval` | 出块间隔（秒） | 0.0 |
+| `block_interval` | 出块间隔（秒） | 3.0 |
 
 ## 贡献
 
@@ -111,6 +111,54 @@ ai-blockchain/
 ## 许可证
 
 本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
+
+## 测试
+
+本项目包含完整的单元测试套件，用于验证各个模块的功能正确性。
+
+### 运行测试
+
+```bash
+# 运行所有测试
+python run_tests.py
+
+# 详细模式运行所有测试
+python run_tests.py -v
+
+# 运行特定模块的测试
+python run_tests.py test_core
+python run_tests.py test_network
+```
+
+### 测试结构
+
+```
+tests/
+├── __init__.py
+├── test_core.py      # 核心模块测试（Transaction、Block、Node等）
+└── test_network.py   # 网络模块测试（NetworkTopology、NetworkTransport等）
+```
+
+### 测试覆盖范围
+
+当前测试覆盖以下模块：
+
+1. **core模块**：
+   - Transaction类：交易的创建、序列化和大小计算
+   - Block类：区块的创建、哈希计算、序列化和大小计算
+   - Node类：节点的创建、交易和区块管理
+
+2. **network模块**：
+   - NetworkProtocol枚举：网络协议类型定义
+   - NetworkTopology类：网络拓扑生成和管理
+   - NetworkTransport类：网络传输和数据统计
+
+### 添加新测试
+
+要添加新的测试，请在`tests/`目录下创建新的测试文件，遵循以下命名约定：
+- 文件名以`test_`开头，如`test_consensus.py`
+- 测试类继承自`unittest.TestCase`
+- 测试方法名以`test_`开头
 
 ## 作者
 

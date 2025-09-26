@@ -2,14 +2,16 @@ import json
 import time
 import random
 import os
+import gzip
 from typing import List, Dict, Optional
 
 # 尝试导入绘图库
 try:
     import matplotlib.pyplot as plt
+    import numpy as np
     HAS_MATPLOTLIB = True
 except ImportError:
-    HAS_MATPLOIB = False
+    HAS_MATPLOTLIB = False
     print("Warning: matplotlib not found. Plotting functionality will be disabled.")
 
 from core import ConsensusType, Transaction, Block, Node
@@ -27,7 +29,8 @@ class BlockchainSimulator:
                  transaction_send_rate: Optional[float] = None,
                  max_transactions_per_block: int = 256,
                  transaction_size: int = 300,
-                 block_interval: float = 3.0):
+                 block_interval: float = 3.0,
+                 network_bandwidth: int = 2500000):
         """
         初始化区块链模拟器
         
@@ -39,6 +42,7 @@ class BlockchainSimulator:
             max_transactions_per_block: 每个区块最大交易数
             transaction_size: 每笔交易大小（字节）
             block_interval: 出块间隔（秒），默认为3秒
+            network_bandwidth: 网络带宽（字节/秒），默认为2500000字节/秒（20Mbps）
         """
         self.node_count = node_count
         self.consensus_type = consensus_type
@@ -47,40 +51,42 @@ class BlockchainSimulator:
         self.max_transactions_per_block = max_transactions_per_block  # 每个区块最大交易数
         self.transaction_size = transaction_size  # 每笔交易大小（字节）
         self.block_interval = block_interval  # 出块间隔（秒）
+        self.network_bandwidth = network_bandwidth  # 网络带宽（字节/秒）
         self.nodes: List[Node] = []
         self.topology: Optional[NetworkTopology] = None
         self.transport: Optional[NetworkTransport] = None
         self.consensus: Optional[ConsensusAlgorithm] = None
         self.block_tps_history: List[Dict] = []  # 存储区块TPS历史记录
         self.transaction_confirm_times: List[float] = []  # 存储交易确认时间
-        self._last_block_confirm_time = 0.0  # 上一个区块的确认时间
+        
+        # 初始化网络拓扑和传输层
+        self.topology = NetworkTopology(self.nodes)
+        self.topology.generate_topology(network_protocol)
+        self.transport = NetworkTransport(self.topology, network_protocol, network_bandwidth=self.network_bandwidth)
+        
+        # 初始化共识算法
+        if consensus_type == ConsensusType.POW:
+            self.consensus = PoWConsensus(max_transactions_per_block=self.max_transactions_per_block)
+        elif consensus_type == ConsensusType.PBFT:
+            self.consensus = PBFTConsensus(max_transactions_per_block=self.max_transactions_per_block)
+        elif consensus_type == ConsensusType.HOTSTUFF:
+            self.consensus = HotStuffConsensus(max_transactions_per_block=self.max_transactions_per_block)
+        elif consensus_type == ConsensusType.DUMBO:
+            self.consensus = DumboConsensus(max_transactions_per_block=self.max_transactions_per_block)
+
+        # 设置上一个区块的确认时间为模拟开始时间，以确保第一个区块也遵守出块间隔
+        self._last_block_confirm_time = time.time()
+        
+        # 最后初始化节点
         self._initialize_nodes()
-        self._initialize_topology()
-        self._initialize_consensus()
 
     def _initialize_nodes(self):
         """初始化节点"""
         self.nodes = []
         for i in range(self.node_count):
-            node = Node(i, f"192.168.1.{i+1}")
+            node = Node(i, f"192.168.1.{i+1}", self.network_bandwidth)
             self.nodes.append(node)
 
-    def _initialize_topology(self):
-        """初始化网络拓扑"""
-        self.topology = NetworkTopology(self.nodes)
-        self.topology.generate_topology(self.network_protocol)
-        self.transport = NetworkTransport(self.topology, self.network_protocol)
-
-    def _initialize_consensus(self):
-        """初始化共识算法"""
-        if self.consensus_type == ConsensusType.POW:
-            self.consensus = PoWConsensus(max_transactions_per_block=self.max_transactions_per_block)
-        elif self.consensus_type == ConsensusType.PBFT:
-            self.consensus = PBFTConsensus(max_transactions_per_block=self.max_transactions_per_block)
-        elif self.consensus_type == ConsensusType.HOTSTUFF:
-            self.consensus = HotStuffConsensus(max_transactions_per_block=self.max_transactions_per_block)
-        elif self.consensus_type == ConsensusType.DUMBO:
-            self.consensus = DumboConsensus(max_transactions_per_block=self.max_transactions_per_block)
 
     def set_consensus_algorithm(self, consensus_type: ConsensusType):
         """
@@ -184,12 +190,19 @@ class BlockchainSimulator:
         Args:
             current_time: 当前时间
         """
-        if self.block_interval > 0 and self._last_block_confirm_time > 0:
-            elapsed_time = current_time - self._last_block_confirm_time
-            wait_time = self.block_interval - elapsed_time
-            
-            if wait_time > 0:
-                time.sleep(wait_time)
+        if self.block_interval > 0:
+            # 如果是第一个区块且_last_block_confirm_time为0，则使用当前时间作为起始点
+            if self._last_block_confirm_time == 0:
+                self._last_block_confirm_time = current_time
+                # 对于第一个区块，等待一个完整的出块间隔
+                time.sleep(self.block_interval)
+            else:
+                # 对于后续区块，计算并等待剩余时间
+                elapsed_time = current_time - self._last_block_confirm_time
+                wait_time = self.block_interval - elapsed_time
+                
+                if wait_time > 0:
+                    time.sleep(wait_time)
                 
     def _update_block_confirm_time(self, confirm_time: float):
         """
@@ -235,6 +248,9 @@ class BlockchainSimulator:
         # 绘制TPS图表和交易确认时间分布图
         self._plot_tps_chart()
         self._plot_confirmation_time_distribution()
+        
+        # 绘制节点间数据传输图表
+        self._plot_node_data_transfer()
 
     def _send_transactions_and_mine_concurrently(self, transactions: List[Transaction], submit_times: Dict[str, float], blocks_to_mine: int):
         """
@@ -266,14 +282,14 @@ class BlockchainSimulator:
         last_mine_time = start_sending_time
         
         # 开始发送交易并同时挖矿
-        while sent_transactions < total_transactions and blocks_mined < blocks_to_mine and transactions_mined < total_transactions:
+        while sent_transactions < total_transactions and blocks_mined < blocks_to_mine:
             # 计算当前应该发送的交易批次
-            batch_end = min(sent_transactions + max(1, int(self.transaction_send_rate)), total_transactions)
+            batch_end = min(sent_transactions + max(1, int(self.transaction_send_rate / 10)), total_transactions)
             
             # 发送一批交易
             for i in range(sent_transactions, batch_end):
-                # 检查是否已达到区块数量限制或交易总数限制
-                if blocks_mined >= blocks_to_mine or transactions_mined >= total_transactions:
+                # 检查是否已达到区块数量限制
+                if blocks_mined >= blocks_to_mine:
                     break
                     
                 # 计算应该发送的时间点
@@ -310,12 +326,12 @@ class BlockchainSimulator:
                         blocks_mined += 1
                         transactions_mined += len(block.transactions)
                         last_mine_time = current_time
-                        # 检查是否已达到区块数量限制或交易总数限制
-                        if blocks_mined >= blocks_to_mine or transactions_mined >= total_transactions:
+                        # 检查是否已达到区块数量限制
+                        if blocks_mined >= blocks_to_mine:
                             break
             
-            # 如果已达到区块数量限制或交易总数限制，则退出循环
-            if blocks_mined >= blocks_to_mine or transactions_mined >= total_transactions:
+            # 如果已达到区块数量限制，则退出循环
+            if blocks_mined >= blocks_to_mine:
                 break
                 
             # 定期检查所有节点是否可以创建区块
@@ -325,7 +341,7 @@ class BlockchainSimulator:
             min_time_between_mines = 1.0 / self.transaction_send_rate if self.transaction_send_rate else 0.1
             
             for node in self.nodes:
-                if blocks_mined >= blocks_to_mine or transactions_mined >= total_transactions:
+                if blocks_mined >= blocks_to_mine:
                     break
                 if (len(node.pending_transactions) >= transactions_per_block and 
                     time_since_last_mine >= min_time_between_mines):
@@ -341,17 +357,25 @@ class BlockchainSimulator:
         time_since_last_mine = current_time - last_mine_time
         min_time_between_mines = 1.0 / self.transaction_send_rate if self.transaction_send_rate else 0.1
         
-        if blocks_mined < blocks_to_mine and time_since_last_mine >= min_time_between_mines:
+        while blocks_mined < blocks_to_mine:
             for node in self.nodes:
-                if blocks_mined >= blocks_to_mine or transactions_mined >= total_transactions:
+                if blocks_mined >= blocks_to_mine:
                     break
-                if node.pending_transactions:
+                if node.pending_transactions and time_since_last_mine >= min_time_between_mines:
                     block = self._mine_one_block(node, submit_times)
                     if block:
                         blocks_mined += 1
                         transactions_mined += len(block.transactions)
-                        if transactions_mined >= total_transactions:
-                            break
+                        last_mine_time = time.time()
+                        time_since_last_mine = 0
+                        break
+            
+            # 如果本轮没有挖到区块，短暂等待再继续
+            if blocks_mined < blocks_to_mine:
+                time.sleep(0.01)
+                time_since_last_mine = time.time() - last_mine_time
+
+        print(f"Simulation finished. Blocks mined: {blocks_mined}, Transactions processed: {transactions_mined}")
 
     def _mine_one_block(self, node: Node, submit_times: Dict[str, float]):
         """
@@ -438,7 +462,7 @@ class BlockchainSimulator:
 
     def _plot_confirmation_time_distribution(self):
         """
-        绘制交易确认时间分布图并保存到results文件夹
+        绘制交易确认时间CDF图并保存到results文件夹
         """
         if not HAS_MATPLOTLIB:
             print("Skipping confirmation time distribution plotting due to missing matplotlib")
@@ -451,24 +475,111 @@ class BlockchainSimulator:
         # 创建results目录
         os.makedirs('results', exist_ok=True)
         
-        # 绘制直方图
+        # 计算CDF数据
+        sorted_times = np.sort(self.transaction_confirm_times)
+        y_vals = np.arange(len(sorted_times)) / float(len(sorted_times))
+        
+        # 绘制CDF图
         plt.figure(figsize=(10, 6))
-        plt.hist(self.transaction_confirm_times, bins=30, alpha=0.7, color='blue', edgecolor='black')
+        plt.plot(sorted_times, y_vals, linewidth=2)
         plt.xlabel('Confirmation Time (seconds)')
-        plt.ylabel('Frequency')
-        plt.title(f'Transaction Confirmation Time Distribution ({self.consensus_type.value.upper()} Consensus)')
+        plt.ylabel('CDF')
+        plt.title(f'Transaction Confirmation Time CDF ({self.consensus_type.value.upper()} Consensus)')
         plt.grid(True, alpha=0.3)
         
         # 保存图表
-        filename = f"results/confirmation_time_distribution_{self.consensus_type.value.lower()}_{self.network_protocol.value.lower()}.png"
+        filename = f"results/confirmation_time_cdf_{self.consensus_type.value.lower()}_{self.network_protocol.value.lower()}.png"
         plt.savefig(filename, dpi=300, bbox_inches='tight')
         plt.close()  # 关闭图表，不显示
         
-        print(f"Confirmation time distribution chart saved to {filename}")
+        print(f"Confirmation time CDF chart saved to {filename}")
+
+    def _plot_node_data_transfer(self):
+        """
+        绘制节点间数据传输总量图表并保存到results文件夹
+        """
+        if not HAS_MATPLOTLIB:
+            print("Skipping node data transfer plotting due to missing matplotlib")
+            return
+            
+        if not self.transport:
+            print("No transport layer available for data transfer plotting")
+            return
+            
+        # 获取数据传输统计信息
+        data_stats = self.transport.get_data_transfer_stats()
+        
+        # 如果没有数据传输统计信息，则跳过绘图
+        if not data_stats:
+            print("No data transfer statistics to plot")
+            return
+            
+        # 创建results目录
+        os.makedirs('results', exist_ok=True)
+        
+        # 准备绘图数据
+        nodes = list(range(self.node_count))
+        node_labels = [f'Node {i}' for i in nodes]
+        
+        # 创建一个矩阵来存储节点间的数据传输量（以交易数量为单位）
+        transfer_matrix = np.zeros((self.node_count, self.node_count))
+        
+        # 填充传输矩阵
+        for sender, receivers in data_stats.items():
+            for receiver, amount in receivers.items():
+                if sender >= 0 and receiver < self.node_count:  # 排除初始传输(-1)
+                    transfer_matrix[sender][receiver] = amount
+        
+        # 将交易数量转换为数据量（MB）
+        # 每个交易的大小由transaction_size参数确定，转换为MB单位
+        data_matrix_mb = (transfer_matrix * self.transaction_size) / (1024 * 1024)
+        
+        # 创建热力图
+        plt.figure(figsize=(10, 8))
+        im = plt.imshow(data_matrix_mb, cmap='Blues', aspect='auto')
+        
+        # 判断是否显示详细信息（当节点数较少时显示）
+        show_details = self.node_count <= 20
+        
+        if show_details:
+            # 设置坐标轴标签
+            plt.xticks(ticks=nodes, labels=node_labels, rotation=45)
+            plt.yticks(ticks=nodes, labels=node_labels)
+            
+            # 在每个格子中添加数值标签（以MB为单位）
+            for i in range(self.node_count):
+                for j in range(self.node_count):
+                    if data_matrix_mb[i, j] > 0:
+                        # 显示MB单位的数值
+                        data_amount_mb = data_matrix_mb[i, j]
+                        text = plt.text(j, i, f'{data_amount_mb:.2f}',
+                                      ha="center", va="center", 
+                                      color="black" if data_matrix_mb[i, j] < np.max(data_matrix_mb)/2 else "white")
+        else:
+            # 节点数较多时，不显示具体的标签和数值
+            plt.xticks(ticks=nodes[::max(1, len(nodes)//10)], labels=[])  # 只显示部分刻度，不显示标签
+            plt.yticks(ticks=nodes[::max(1, len(nodes)//10)], labels=[])
+        
+        # 添加颜色条
+        cbar = plt.colorbar(im)
+        cbar.set_label('Data Transfer Amount (MB)', rotation=270, labelpad=20)
+        
+        # 设置图表标题和其他属性
+        plt.title(f'Node Data Transfer Statistics ({self.consensus_type.value.upper()} Consensus, {self.network_protocol.value.upper()} Protocol)')
+        plt.xlabel('Receiver Node')
+        plt.ylabel('Sender Node')
+        plt.tight_layout()
+        
+        # 保存图表
+        filename = f"results/node_data_transfer_{self.consensus_type.value.lower()}_{self.network_protocol.value.lower()}.png"
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        plt.close()  # 关闭图表，不显示
+        
+        print(f"Node data transfer chart saved to {filename}")
 
     def _save_block_details(self):
         """
-        将区块和交易的详细信息以JSON格式保存到data文件夹下的文件中
+        将区块和交易的详细信息以压缩JSON格式保存到data文件夹下的文件中
         """
         # 创建data目录
         os.makedirs('data', exist_ok=True)
@@ -527,12 +638,12 @@ class BlockchainSimulator:
             }
         }
         
-        # 写入JSON文件
-        filename = f"data/block_details_{self.consensus_type.value}_{self.network_protocol.value}.json"
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        # 使用gzip压缩写入JSON文件
+        filename = f"data/block_details_{self.consensus_type.value}_{self.network_protocol.value}.json.gz"
+        with gzip.open(filename, 'wt', encoding='utf-8') as f:
+            json.dump(data, f, separators=(',', ':'), ensure_ascii=False)
         
-        print(f"区块详细信息已保存到 {filename}")
+        print(f"区块详细信息已保存到 {filename} (已压缩)")
 
     def _plot_tps_chart(self):
         """

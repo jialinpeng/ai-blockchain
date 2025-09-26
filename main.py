@@ -121,11 +121,23 @@ def interactive_setup():
     # 设置挖掘区块数
     while True:
         try:
-            blocks_to_mine = int(input("请输入需要挖掘的区块数 (默认为50): ") or "50")
+            blocks_to_mine = int(input("请输入需要挖掘的区块数 (默认为10): ") or "10")
             if blocks_to_mine > 0:
                 break
             else:
                 print("区块数必须大于0，请重新输入。")
+        except ValueError:
+            print("请输入有效的整数。")
+    
+    # 设置网络带宽
+    while True:
+        try:
+            bandwidth_input = input("请输入每个节点的网络带宽 (字节/秒，默认为2500000): ") or "2500000"
+            network_bandwidth = int(bandwidth_input)
+            if network_bandwidth > 0:
+                break
+            else:
+                print("网络带宽必须大于0，请重新输入。")
         except ValueError:
             print("请输入有效的整数。")
     
@@ -138,7 +150,8 @@ def interactive_setup():
         "transaction_size": transaction_size,
         "block_interval": block_interval,
         "transaction_count": transaction_count,
-        "blocks_to_mine": blocks_to_mine
+        "blocks_to_mine": blocks_to_mine,
+        "network_bandwidth": network_bandwidth
     }
 
 
@@ -158,14 +171,15 @@ if __name__ == "__main__":
             node_count=20,
             consensus_type=ConsensusType.POW,
             network_protocol=NetworkProtocol.GOSSIP,
-            transaction_send_rate=1000.0,  # 1000 transactions per second
+            transaction_send_rate=300.0,  # 300 transactions per second
             max_transactions_per_block=256,  # 每个区块最多256笔交易
             transaction_size=300,  # 每笔交易300字节
-            block_interval=3.0  # 出块间隔3秒
+            block_interval=3.0,  # 出块间隔3秒
+            network_bandwidth=2500000  # 网络带宽20Mbps
         )
         
         # 运行模拟
-        simulator.run_simulation(transaction_count=10000, blocks_to_mine=50)
+        simulator.run_simulation(transaction_count=10000, blocks_to_mine=10)
     else:
         # 交互式设置参数
         params = interactive_setup()
@@ -178,7 +192,8 @@ if __name__ == "__main__":
             transaction_send_rate=params["transaction_send_rate"],
             max_transactions_per_block=params["max_transactions_per_block"],
             transaction_size=params["transaction_size"],
-            block_interval=params["block_interval"]
+            block_interval=params["block_interval"],
+            network_bandwidth=params["network_bandwidth"]
         )
         
         # 运行模拟

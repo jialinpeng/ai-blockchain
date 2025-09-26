@@ -170,16 +170,18 @@ class Node:
     节点类，表示区块链网络中的一个节点
     """
     
-    def __init__(self, node_id: int, ip_address: str):
+    def __init__(self, node_id: int, ip_address: str, network_bandwidth: int = 2500000):
         """
         初始化节点对象
         
         Args:
             node_id: 节点ID
             ip_address: IP地址
+            network_bandwidth: 网络带宽（字节/秒），默认为2500000字节/秒（20Mbps）
         """
         self.node_id = node_id
         self.ip_address = ip_address
+        self.network_bandwidth = network_bandwidth  # 网络带宽（字节/秒）
         self.blockchain: List[Block] = []
         self.pending_transactions: List[Transaction] = []
 
