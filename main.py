@@ -1,4 +1,5 @@
-from core import ConsensusType, NetworkProtocol
+from core import ConsensusType
+from network import NetworkProtocol
 from simulator import BlockchainSimulator
 
 

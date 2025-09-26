@@ -59,7 +59,7 @@ class ConsensusAlgorithm(ABC):
 
 class PoWConsensus(ConsensusAlgorithm):
     """
-    工作量证明共识算法实现
+    工作量证明共识算法实现（比特币风格）
     """
     
     def __init__(self, difficulty: int = 4, max_transactions_per_block: int = 256):
@@ -67,11 +67,13 @@ class PoWConsensus(ConsensusAlgorithm):
         初始化PoW共识算法
         
         Args:
-            difficulty: 挖矿难度
+            difficulty: 挖矿难度（前导零的个数）
             max_transactions_per_block: 每个区块最大交易数
         """
         self.difficulty = difficulty
         self.max_transactions_per_block = max_transactions_per_block
+        # 构造目标值，例如难度为4时，目标值为0x0000FFFF...FFFF
+        self.target = (1 << (256 - difficulty * 4)) - 1
 
     def validate_block(self, block: Block, previous_block: Optional[Block]) -> bool:
         """
@@ -86,11 +88,17 @@ class PoWConsensus(ConsensusAlgorithm):
         """
         if previous_block and block.previous_hash != previous_block.hash:
             return False
-        return block.hash.startswith('0' * self.difficulty)
+            
+        # 验证区块哈希是否满足难度要求
+        block_header = self._construct_block_header(block)
+        block_hash = hashlib.sha256(hashlib.sha256(block_header.encode()).digest()).hexdigest()
+        hash_value = int(block_hash, 16)
+        
+        return hash_value <= self.target and block_hash == block.hash
 
     def create_block(self, node: Node, previous_block: Optional[Block]) -> Optional[Block]:
         """
-        创建新区块
+        创建新区块（比特币风格的PoW）
         
         Args:
             node: 节点对象
@@ -104,23 +112,56 @@ class PoWConsensus(ConsensusAlgorithm):
             
         transactions = node.pending_transactions[:self.max_transactions_per_block]
         previous_hash = previous_block.hash if previous_block else "0" * 64
-        timestamp = time.time()
+        timestamp = int(time.time())
         
+        # 创建区块（初始nonce为0）
+        block = Block(len(node.blockchain), previous_hash, timestamp, transactions, 0)
+        
+        # 进行工作量证明计算
         nonce = 0
-        block_hash = ""
-        while not block_hash.startswith('0' * self.difficulty):
-            nonce += 1
-            block_data = f"{len(node.blockchain)}{previous_hash}{timestamp}" + \
-                        f"{[tx.tx_id for tx in transactions]}{nonce}"
-            block_hash = hashlib.sha256(block_data.encode()).hexdigest()
+        block_hash = None
+        
+        while True:
+            # 构造区块头
+            block_header = self._construct_block_header(block, nonce)
             
-            # 添加一些计算延迟
-            if nonce % 1000 == 0:
+            # 双重SHA256哈希
+            hash_result = hashlib.sha256(hashlib.sha256(block_header.encode()).digest()).hexdigest()
+            hash_value = int(hash_result, 16)
+            
+            # 检查是否满足难度要求
+            if hash_value <= self.target:
+                block_hash = hash_result
+                break
+                
+            # 增加nonce并继续计算
+            nonce += 1
+            block.nonce = nonce
+            
+            # 每计算10000次暂停一下，避免占用过多CPU
+            if nonce % 10000 == 0:
                 time.sleep(0.001)
         
-        block = Block(len(node.blockchain), previous_hash, timestamp, transactions, nonce)
+        # 设置最终的哈希值和nonce
         block.hash = block_hash
+        block.nonce = nonce
         return block
+
+    def _construct_block_header(self, block: Block, nonce: int = None) -> str:
+        """
+        构造区块头字符串
+        
+        Args:
+            block: 区块对象
+            nonce: 随机数
+            
+        Returns:
+            str: 区块头字符串
+        """
+        nonce = nonce if nonce is not None else block.nonce
+        tx_data = "".join([tx.tx_id for tx in block.transactions])
+        block_header = f"{block.index}{block.previous_hash}{block.timestamp}{tx_data}{nonce}"
+        return block_header
 
     def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: NetworkTransport) -> Optional[Block]:
         """
