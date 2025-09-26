@@ -99,7 +99,7 @@ def interactive_setup():
     # 设置出块间隔
     while True:
         try:
-            block_interval = float(input("请输入出块间隔 (秒，默认为0表示无间隔): ") or "0")
+            block_interval = float(input("请输入出块间隔 (秒，默认为3): ") or "3")
             if block_interval >= 0:
                 break
             else:
@@ -161,7 +161,7 @@ if __name__ == "__main__":
             transaction_send_rate=1000.0,  # 1000 transactions per second
             max_transactions_per_block=256,  # 每个区块最多256笔交易
             transaction_size=300,  # 每笔交易300字节
-            block_interval=0.0  # 无出块间隔
+            block_interval=3.0  # 出块间隔3秒
         )
         
         # 运行模拟

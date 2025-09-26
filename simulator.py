@@ -9,7 +9,7 @@ try:
     import matplotlib.pyplot as plt
     HAS_MATPLOTLIB = True
 except ImportError:
-    HAS_MATPLOTLIB = False
+    HAS_MATPLOIB = False
     print("Warning: matplotlib not found. Plotting functionality will be disabled.")
 
 from core import ConsensusType, Transaction, Block, Node
@@ -27,7 +27,7 @@ class BlockchainSimulator:
                  transaction_send_rate: Optional[float] = None,
                  max_transactions_per_block: int = 256,
                  transaction_size: int = 300,
-                 block_interval: float = 0.0):
+                 block_interval: float = 3.0):
         """
         初始化区块链模拟器
         
@@ -38,7 +38,7 @@ class BlockchainSimulator:
             transaction_send_rate: 交易发送速率 (txs/sec)
             max_transactions_per_block: 每个区块最大交易数
             transaction_size: 每笔交易大小（字节）
-            block_interval: 出块间隔（秒），默认为0表示无间隔
+            block_interval: 出块间隔（秒），默认为3秒
         """
         self.node_count = node_count
         self.consensus_type = consensus_type
