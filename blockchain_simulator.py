@@ -1,3 +1,8 @@
+"""
+Blockchain Simulator - A blockchain consensus algorithm simulator with multiple protocols.
+Author: Linpeng Jia and Tongyi Lingma
+"""
+
 import json
 import time
 import random
@@ -19,6 +24,9 @@ except ImportError:
 
 
 class ConsensusType(Enum):
+    """
+    共识算法类型枚举
+    """
     POW = "pow"
     PBFT = "pbft"
     HOTSTUFF = "hotstuff"
@@ -26,7 +34,22 @@ class ConsensusType(Enum):
 
 
 class Transaction:
+    """
+    交易类，表示区块链中的一笔交易
+    """
+    
     def __init__(self, tx_id: str, sender: str, receiver: str, amount: float, timestamp: float, size: int = 300):
+        """
+        初始化交易对象
+        
+        Args:
+            tx_id: 交易ID
+            sender: 发送方
+            receiver: 接收方
+            amount: 金额
+            timestamp: 时间戳
+            size: 交易大小（字节）
+        """
         self.tx_id = tx_id
         self.sender = sender
         self.receiver = receiver
@@ -35,6 +58,12 @@ class Transaction:
         self.size = size  # 每笔交易的大小（字节）
 
     def to_dict(self) -> Dict:
+        """
+        将交易对象转换为字典
+        
+        Returns:
+            交易信息字典
+        """
         return {
             'tx_id': self.tx_id,
             'sender': self.sender,
@@ -45,6 +74,15 @@ class Transaction:
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'Transaction':
+        """
+        从字典创建交易对象
+        
+        Args:
+            data: 交易信息字典
+            
+        Returns:
+            Transaction: 交易对象
+        """
         return cls(
             data['tx_id'],
             data['sender'],
@@ -54,15 +92,34 @@ class Transaction:
         )
 
     def get_size(self) -> int:
-        """获取交易大小（字节）"""
+        """
+        获取交易大小（字节）
+        
+        Returns:
+            交易大小（字节）
+        """
         return self.size
 
 
 class Block:
+    """
+    区块类，表示区块链中的一个区块
+    """
+    
     BLOCK_HEADER_SIZE = 100  # 区块头大小（字节）
     
     def __init__(self, index: int, previous_hash: str, timestamp: float, 
                  transactions: List[Transaction], nonce: int = 0):
+        """
+        初始化区块对象
+        
+        Args:
+            index: 区块索引
+            previous_hash: 前一个区块的哈希值
+            timestamp: 时间戳
+            transactions: 交易列表
+            nonce: 随机数
+        """
         self.index = index
         self.previous_hash = previous_hash
         self.timestamp = timestamp
@@ -71,11 +128,23 @@ class Block:
         self.hash = self.calculate_hash()
 
     def calculate_hash(self) -> str:
+        """
+        计算区块哈希值
+        
+        Returns:
+            区块哈希值
+        """
         block_data = f"{self.index}{self.previous_hash}{self.timestamp}" + \
                     f"{[tx.tx_id for tx in self.transactions]}{self.nonce}"
         return hashlib.sha256(block_data.encode()).hexdigest()
 
     def to_dict(self) -> Dict:
+        """
+        将区块对象转换为字典
+        
+        Returns:
+            区块信息字典
+        """
         return {
             'index': self.index,
             'previous_hash': self.previous_hash,
@@ -87,6 +156,15 @@ class Block:
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'Block':
+        """
+        从字典创建区块对象
+        
+        Args:
+            data: 区块信息字典
+            
+        Returns:
+            Block: 区块对象
+        """
         transactions = [Transaction.from_dict(tx_data) for tx_data in data['transactions']]
         block = cls(
             data['index'],
@@ -99,17 +177,36 @@ class Block:
         return block
 
     def get_size(self) -> int:
-        """获取区块大小（字节）"""
+        """
+        获取区块大小（字节）
+        
+        Returns:
+            区块大小（字节）
+        """
         return self.BLOCK_HEADER_SIZE + sum(tx.get_size() for tx in self.transactions)
 
 
 class NetworkProtocol(Enum):
+    """
+    网络协议类型枚举
+    """
     DIRECT = "direct"
     GOSSIP = "gossip"
 
 
 class Node:
+    """
+    节点类，表示区块链网络中的一个节点
+    """
+    
     def __init__(self, node_id: int, address: str):
+        """
+        初始化节点对象
+        
+        Args:
+            node_id: 节点ID
+            address: 节点地址
+        """
         self.node_id = node_id
         self.address = address
         self.blockchain: List[Block] = []
@@ -117,38 +214,79 @@ class Node:
         self.bandwidth = 100  # 默认带宽 (Mbps)
 
     def add_transaction(self, transaction: Transaction):
-        """添加交易到待处理列表"""
+        """
+        添加交易到待处理列表
+        
+        Args:
+            transaction: 交易对象
+        """
         self.pending_transactions.append(transaction)
 
     def get_latest_block(self) -> Optional[Block]:
-        """获取最新的区块"""
+        """
+        获取最新的区块
+        
+        Returns:
+            最新的区块对象，如果不存在则返回None
+        """
         if not self.blockchain:
             return None
         return self.blockchain[-1]
 
     def add_block(self, block: Block):
-        """添加区块到区块链"""
+        """
+        添加区块到区块链
+        
+        Args:
+            block: 区块对象
+        """
         self.blockchain.append(block)
 
     def set_bandwidth(self, bandwidth: float):
-        """设置节点带宽"""
+        """
+        设置节点带宽
+        
+        Args:
+            bandwidth: 带宽值
+        """
         self.bandwidth = bandwidth
 
 
 class NetworkTopology:
+    """
+    网络拓扑类，管理节点间的连接关系
+    """
+    
     def __init__(self, nodes: List[Node]):
+        """
+        初始化网络拓扑
+        
+        Args:
+            nodes: 节点列表
+        """
         self.nodes = nodes
         self.connections: Dict[int, List[int]] = defaultdict(list)
 
     def add_connection(self, node_a_id: int, node_b_id: int):
-        """添加节点间连接"""
+        """
+        添加节点间连接
+        
+        Args:
+            node_a_id: 节点A的ID
+            node_b_id: 节点B的ID
+        """
         if node_b_id not in self.connections[node_a_id]:
             self.connections[node_a_id].append(node_b_id)
         if node_a_id not in self.connections[node_b_id]:
             self.connections[node_b_id].append(node_a_id)
 
     def load_from_json(self, file_path: str):
-        """从JSON文件加载网络拓扑"""
+        """
+        从JSON文件加载网络拓扑
+        
+        Args:
+            file_path: JSON文件路径
+        """
         with open(file_path, 'r') as f:
             data = json.load(f)
             
@@ -170,7 +308,12 @@ class NetworkTopology:
                 self.add_connection(conn['node_a'], conn['node_b'])
 
     def generate_topology(self, protocol: NetworkProtocol):
-        """根据传输协议动态生成网络拓扑"""
+        """
+        根据传输协议动态生成网络拓扑
+        
+        Args:
+            protocol: 网络协议类型
+        """
         node_count = len(self.nodes)
         if node_count <= 1:
             return
@@ -199,31 +342,66 @@ class NetworkTopology:
                     self.add_connection(i, j)
 
     def get_neighbors(self, node_id: int) -> List[int]:
-        """获取节点的邻居列表"""
+        """
+        获取节点的邻居列表
+        
+        Args:
+            node_id: 节点ID
+            
+        Returns:
+            邻居节点ID列表
+        """
         return self.connections[node_id]
 
 
 class NetworkTransport:
-    """网络传输层，支持不同的传输协议"""
+    """
+    网络传输层，支持不同的传输协议
+    """
     
     def __init__(self, topology: NetworkTopology, protocol: NetworkProtocol = NetworkProtocol.DIRECT):
+        """
+        初始化网络传输层
+        
+        Args:
+            topology: 网络拓扑
+            protocol: 网络协议类型
+        """
         self.topology = topology
         self.protocol = protocol
     
     def broadcast_transactions(self, nodes: List[Node], transactions: List[Transaction]):
-        """广播交易到网络中的节点"""
+        """
+        广播交易到网络中的节点
+        
+        Args:
+            nodes: 节点列表
+            transactions: 交易列表
+        """
         if self.protocol == NetworkProtocol.DIRECT:
             self._direct_broadcast(nodes, transactions)
         elif self.protocol == NetworkProtocol.GOSSIP:
             self._gossip_broadcast(nodes, transactions)
     
     def _direct_broadcast(self, nodes: List[Node], transactions: List[Transaction]):
-        """直接广播：将交易发送到所有节点"""
+        """
+        直接广播：将交易发送到所有节点
+        
+        Args:
+            nodes: 节点列表
+            transactions: 交易列表
+        """
         for node in nodes:
             node.pending_transactions.extend(transactions)
     
     def _gossip_broadcast(self, nodes: List[Node], transactions: List[Transaction]):
-        """Gossip广播：随机选择节点进行传播"""
+        """
+        Gossip广播：随机选择节点进行传播
+        
+        Args:
+            nodes: 节点列表
+            transactions: 交易列表
+        """
         # 首先将交易发送给部分节点
         initial_nodes = random.sample(nodes, max(1, len(nodes) // 3))
         for node in initial_nodes:
@@ -250,28 +428,81 @@ class NetworkTransport:
 
 
 class ConsensusAlgorithm(ABC):
+    """
+    共识算法抽象基类
+    """
+    
     @abstractmethod
     def validate_block(self, block: Block, previous_block: Optional[Block]) -> bool:
-        """验证区块"""
+        """
+        验证区块
+        
+        Args:
+            block: 待验证的区块
+            previous_block: 前一个区块
+            
+        Returns:
+            bool: 验证结果
+        """
         pass
 
     @abstractmethod
     def create_block(self, node: Node, previous_block: Optional[Block]) -> Optional[Block]:
-        """创建新区块"""
+        """
+        创建新区块
+        
+        Args:
+            node: 节点对象
+            previous_block: 前一个区块
+            
+        Returns:
+            Block: 新创建的区块，如果无法创建则返回None
+        """
         pass
 
     @abstractmethod
     def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: NetworkTransport) -> Optional[Block]:
-        """在节点间达成共识"""
+        """
+        在节点间达成共识
+        
+        Args:
+            nodes: 节点列表
+            transactions: 交易列表
+            transport: 网络传输对象
+            
+        Returns:
+            Block: 达成共识的区块，如果没有达成则返回None
+        """
         pass
 
 
 class PoWConsensus(ConsensusAlgorithm):
+    """
+    工作量证明共识算法实现
+    """
+    
     def __init__(self, difficulty: int = 4, max_transactions_per_block: int = 256):
+        """
+        初始化PoW共识算法
+        
+        Args:
+            difficulty: 挖矿难度
+            max_transactions_per_block: 每个区块最大交易数
+        """
         self.difficulty = difficulty
         self.max_transactions_per_block = max_transactions_per_block
 
     def validate_block(self, block: Block, previous_block: Optional[Block]) -> bool:
+        """
+        验证区块
+        
+        Args:
+            block: 待验证的区块
+            previous_block: 前一个区块
+            
+        Returns:
+            bool: 验证结果
+        """
         # 检查哈希是否满足难度要求
         if not block.hash.startswith('0' * self.difficulty):
             return False
@@ -284,6 +515,16 @@ class PoWConsensus(ConsensusAlgorithm):
         return block.hash == block.calculate_hash()
 
     def create_block(self, node: Node, previous_block: Optional[Block]) -> Optional[Block]:
+        """
+        创建新区块
+        
+        Args:
+            node: 节点对象
+            previous_block: 前一个区块
+            
+        Returns:
+            Block: 新创建的区块，如果无法创建则返回None
+        """
         if not node.pending_transactions:
             return None
             
@@ -309,6 +550,17 @@ class PoWConsensus(ConsensusAlgorithm):
         return block
 
     def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: NetworkTransport) -> Optional[Block]:
+        """
+        在节点间达成共识
+        
+        Args:
+            nodes: 节点列表
+            transactions: 交易列表
+            transport: 网络传输对象
+            
+        Returns:
+            Block: 达成共识的区块，如果没有达成则返回None
+        """
         # 简化的PoW共识：第一个完成挖矿的节点获胜
         if not transactions:
             return None
@@ -328,16 +580,46 @@ class PoWConsensus(ConsensusAlgorithm):
 
 
 class PBFTConsensus(ConsensusAlgorithm):
+    """
+    实用拜占庭容错共识算法实现
+    """
+    
     def __init__(self, max_transactions_per_block: int = 256):
+        """
+        初始化PBFT共识算法
+        
+        Args:
+            max_transactions_per_block: 每个区块最大交易数
+        """
         self.max_transactions_per_block = max_transactions_per_block
     
     def validate_block(self, block: Block, previous_block: Optional[Block]) -> bool:
+        """
+        验证区块
+        
+        Args:
+            block: 待验证的区块
+            previous_block: 前一个区块
+            
+        Returns:
+            bool: 验证结果
+        """
         # 检查前一区块哈希
         if previous_block and block.previous_hash != previous_block.hash:
             return False
         return True
 
     def create_block(self, node: Node, previous_block: Optional[Block]) -> Optional[Block]:
+        """
+        创建新区块
+        
+        Args:
+            node: 节点对象
+            previous_block: 前一个区块
+            
+        Returns:
+            Block: 新创建的区块，如果无法创建则返回None
+        """
         if not node.pending_transactions:
             return None
             
@@ -355,6 +637,17 @@ class PBFTConsensus(ConsensusAlgorithm):
         return block
 
     def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: NetworkTransport) -> Optional[Block]:
+        """
+        在节点间达成共识
+        
+        Args:
+            nodes: 节点列表
+            transactions: 交易列表
+            transport: 网络传输对象
+            
+        Returns:
+            Block: 达成共识的区块，如果没有达成则返回None
+        """
         if not transactions:
             return None
             
@@ -372,18 +665,48 @@ class PBFTConsensus(ConsensusAlgorithm):
 
 
 class HotStuffConsensus(ConsensusAlgorithm):
+    """
+    HotStuff共识算法实现
+    """
+    
     def __init__(self, max_transactions_per_block: int = 256):
+        """
+        初始化HotStuff共识算法
+        
+        Args:
+            max_transactions_per_block: 每个区块最大交易数
+        """
         self.max_transactions_per_block = max_transactions_per_block
         self.pipeline_depth = 3  # 流水线深度
         self.current_leader = 0  # 当前领导者索引
     
     def validate_block(self, block: Block, previous_block: Optional[Block]) -> bool:
+        """
+        验证区块
+        
+        Args:
+            block: 待验证的区块
+            previous_block: 前一个区块
+            
+        Returns:
+            bool: 验证结果
+        """
         # 检查前一区块哈希
         if previous_block and block.previous_hash != previous_block.hash:
             return False
         return True
 
     def create_block(self, node: Node, previous_block: Optional[Block]) -> Optional[Block]:
+        """
+        创建新区块
+        
+        Args:
+            node: 节点对象
+            previous_block: 前一个区块
+            
+        Returns:
+            Block: 新创建的区块，如果无法创建则返回None
+        """
         if not node.pending_transactions:
             return None
             
@@ -409,6 +732,17 @@ class HotStuffConsensus(ConsensusAlgorithm):
         return block
 
     def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: NetworkTransport) -> Optional[Block]:
+        """
+        在节点间达成共识
+        
+        Args:
+            nodes: 节点列表
+            transactions: 交易列表
+            transport: 网络传输对象
+            
+        Returns:
+            Block: 达成共识的区块，如果没有达成则返回None
+        """
         if not transactions:
             return None
             
@@ -434,16 +768,46 @@ class HotStuffConsensus(ConsensusAlgorithm):
 
 
 class DumboConsensus(ConsensusAlgorithm):
+    """
+    Dumbo共识算法实现
+    """
+    
     def __init__(self, max_transactions_per_block: int = 256):
+        """
+        初始化Dumbo共识算法
+        
+        Args:
+            max_transactions_per_block: 每个区块最大交易数
+        """
         self.max_transactions_per_block = max_transactions_per_block
     
     def validate_block(self, block: Block, previous_block: Optional[Block]) -> bool:
+        """
+        验证区块
+        
+        Args:
+            block: 待验证的区块
+            previous_block: 前一个区块
+            
+        Returns:
+            bool: 验证结果
+        """
         # 检查前一区块哈希
         if previous_block and block.previous_hash != previous_block.hash:
             return False
         return True
 
     def create_block(self, node: Node, previous_block: Optional[Block]) -> Optional[Block]:
+        """
+        创建新区块
+        
+        Args:
+            node: 节点对象
+            previous_block: 前一个区块
+            
+        Returns:
+            Block: 新创建的区块，如果无法创建则返回None
+        """
         if not node.pending_transactions:
             return None
             
@@ -461,6 +825,17 @@ class DumboConsensus(ConsensusAlgorithm):
         return block
 
     def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: NetworkTransport) -> Optional[Block]:
+        """
+        在节点间达成共识
+        
+        Args:
+            nodes: 节点列表
+            transactions: 交易列表
+            transport: 网络传输对象
+            
+        Returns:
+            Block: 达成共识的区块，如果没有达成则返回None
+        """
         if not transactions:
             return None
             
@@ -478,23 +853,42 @@ class DumboConsensus(ConsensusAlgorithm):
 
 
 class BlockchainSimulator:
+    """
+    区块链模拟器主类
+    """
+    
     def __init__(self, node_count: int = 4, consensus_type: ConsensusType = ConsensusType.POW, 
                  network_protocol: NetworkProtocol = NetworkProtocol.DIRECT,
                  transaction_send_rate: Optional[float] = None,
                  max_transactions_per_block: int = 256,
-                 transaction_size: int = 300):
+                 transaction_size: int = 300,
+                 block_interval: float = 0.0):
+        """
+        初始化区块链模拟器
+        
+        Args:
+            node_count: 节点数量
+            consensus_type: 共识算法类型
+            network_protocol: 网络协议类型
+            transaction_send_rate: 交易发送速率 (txs/sec)
+            max_transactions_per_block: 每个区块最大交易数
+            transaction_size: 每笔交易大小（字节）
+            block_interval: 出块间隔（秒），默认为0表示无间隔
+        """
         self.node_count = node_count
         self.consensus_type = consensus_type
         self.network_protocol = network_protocol
         self.transaction_send_rate = transaction_send_rate  # 交易发送速率 (txs/sec)
         self.max_transactions_per_block = max_transactions_per_block  # 每个区块最大交易数
         self.transaction_size = transaction_size  # 每笔交易大小（字节）
+        self.block_interval = block_interval  # 出块间隔（秒）
         self.nodes: List[Node] = []
         self.topology: Optional[NetworkTopology] = None
         self.transport: Optional[NetworkTransport] = None
         self.consensus: Optional[ConsensusAlgorithm] = None
         self.block_tps_history: List[Dict] = []  # 存储区块TPS历史记录
         self.transaction_confirm_times: List[float] = []  # 存储交易确认时间
+        self._last_block_confirm_time = 0.0  # 上一个区块的确认时间
         self._initialize_nodes()
         self._initialize_topology()
         self._initialize_consensus()
@@ -524,30 +918,58 @@ class BlockchainSimulator:
             self.consensus = DumboConsensus(max_transactions_per_block=self.max_transactions_per_block)
 
     def set_consensus_algorithm(self, consensus_type: ConsensusType):
-        """设置共识算法"""
+        """
+        设置共识算法
+        
+        Args:
+            consensus_type: 共识算法类型
+        """
         self.consensus_type = consensus_type
         self._initialize_consensus()
 
     def set_network_protocol(self, protocol: NetworkProtocol):
-        """设置网络传输协议"""
+        """
+        设置网络传输协议
+        
+        Args:
+            protocol: 网络协议类型
+        """
         self.network_protocol = protocol
         if self.topology:
             self.topology.generate_topology(protocol)
             self.transport = NetworkTransport(self.topology, protocol)
 
     def set_topology(self, topology: NetworkTopology):
-        """设置网络拓扑"""
+        """
+        设置网络拓扑
+        
+        Args:
+            topology: 网络拓扑对象
+        """
         self.topology = topology
         self.transport = NetworkTransport(topology, self.network_protocol)
 
     def load_topology_from_json(self, file_path: str):
-        """从JSON文件加载网络拓扑"""
+        """
+        从JSON文件加载网络拓扑
+        
+        Args:
+            file_path: JSON文件路径
+        """
         self.topology = NetworkTopology(self.nodes)
         self.topology.load_from_json(file_path)
         self.transport = NetworkTransport(self.topology, self.network_protocol)
 
     def generate_transactions(self, count: int) -> List[Transaction]:
-        """生成随机交易"""
+        """
+        生成随机交易
+        
+        Args:
+            count: 交易数量
+            
+        Returns:
+            交易列表
+        """
         transactions = []
         for i in range(count):
             tx = Transaction(
@@ -562,16 +984,65 @@ class BlockchainSimulator:
         return transactions
 
     def submit_transaction(self, node_id: int, transaction: Transaction):
-        """向指定节点提交交易"""
+        """
+        向指定节点提交交易
+        
+        Args:
+            node_id: 节点ID
+            transaction: 交易对象
+        """
         if 0 <= node_id < len(self.nodes):
             self.nodes[node_id].add_transaction(transaction)
 
     def set_transaction_send_rate(self, rate: float):
-        """设置交易发送速率（txs/sec）"""
+        """
+        设置交易发送速率（txs/sec）
+        
+        Args:
+            rate: 交易发送速率
+        """
         self.transaction_send_rate = rate
 
+    def set_block_interval(self, interval: float):
+        """
+        设置出块间隔
+        
+        Args:
+            interval: 出块间隔（秒）
+        """
+        self.block_interval = interval
+
+    def _wait_for_next_block_interval(self, current_time: float):
+        """
+        等待到下一个区块的时间间隔点
+        
+        Args:
+            current_time: 当前时间
+        """
+        if self.block_interval > 0 and self._last_block_confirm_time > 0:
+            elapsed_time = current_time - self._last_block_confirm_time
+            wait_time = self.block_interval - elapsed_time
+            
+            if wait_time > 0:
+                time.sleep(wait_time)
+                
+    def _update_block_confirm_time(self, confirm_time: float):
+        """
+        更新区块确认时间
+        
+        Args:
+            confirm_time: 区块确认时间
+        """
+        self._last_block_confirm_time = confirm_time
+
     def run_simulation(self, transaction_count: int = 100, blocks_to_mine: int = 10):
-        """运行模拟"""
+        """
+        运行模拟
+        
+        Args:
+            transaction_count: 交易数量
+            blocks_to_mine: 需要挖掘的区块数量
+        """
         print(f"Starting blockchain simulation with {self.node_count} nodes")
         print(f"Consensus: {self.consensus_type.value}")
         print(f"Network Protocol: {self.network_protocol.value}")
@@ -582,13 +1053,14 @@ class BlockchainSimulator:
         # 记录交易提交时间
         submit_times = {tx.tx_id: tx.timestamp for tx in transactions}
         
-        # 如果设置了交易发送速率，则按速率发送交易并在发送过程中进行共识
+        # 只使用并发模式：一边发送交易一边进行共识
         if self.transaction_send_rate is not None:
             print(f"Sending transactions at rate: {self.transaction_send_rate} txs/sec")
-            self._send_transactions_and_mine_concurrently(transactions, submit_times, blocks_to_mine)
         else:
-            # 原有的区块挖掘逻辑
-            self._mine_blocks_sequentially(transactions, submit_times, blocks_to_mine)
+            print("Transaction send rate not set, using default rate of 1000 txs/sec")
+            self.transaction_send_rate = 1000.0
+            
+        self._send_transactions_and_mine_concurrently(transactions, submit_times, blocks_to_mine)
         
         print("Simulation completed")
         
@@ -599,66 +1071,15 @@ class BlockchainSimulator:
         self._plot_tps_chart()
         self._plot_confirmation_time_distribution()
 
-    def _mine_blocks_sequentially(self, transactions: List[Transaction], submit_times: Dict[str, float], blocks_to_mine: int):
-        """按顺序挖掘区块（原有逻辑）"""
-        transaction_count = len(transactions)
-        
-        for block_index in range(blocks_to_mine):
-            print(f"Mining block {block_index + 1}/{blocks_to_mine}")
-            
-            # 获取该轮次需要处理的交易
-            start_idx = block_index * (transaction_count // blocks_to_mine)
-            end_idx = min((block_index + 1) * (transaction_count // blocks_to_mine), transaction_count)
-            round_transactions = transactions[start_idx:end_idx]
-            
-            # 将交易广播到所有节点
-            for node in self.nodes:
-                node.pending_transactions.extend(round_transactions)
-            
-            # 记录开始时间
-            start_time = time.time()
-            
-            # 达成共识并创建区块
-            block = self.consensus.reach_consensus(self.nodes, round_transactions, self.transport)
-            
-            if block:
-                # 记录结束时间
-                end_time = time.time()
-                
-                # 计算TPS
-                block_time = end_time - start_time
-                tps = len(block.transactions) / block_time if block_time > 0 else 0
-                
-                # 计算区块大小
-                block_size = block.get_size()
-                
-                # 将区块添加到所有节点
-                for node in self.nodes:
-                    node.add_block(block)
-                
-                # 记录交易确认时间
-                confirm_time = time.time()
-                for tx in block.transactions:
-                    if tx.tx_id in submit_times:
-                        self.transaction_confirm_times.append(confirm_time - submit_times[tx.tx_id])
-                
-                # 记录区块信息
-                block_info = {
-                    'block_height': block_index,
-                    'transaction_count': len(block.transactions),
-                    'block_size': block_size,
-                    'block_time': block_time,
-                    'tps': tps
-                }
-                self.block_tps_history.append(block_info)
-                
-                print(f"Block {block_index}: {len(block.transactions)} transactions, "
-                      f"Size: {block_size} bytes, Time: {block_time:.2f}s, TPS: {tps:.2f}")
-            else:
-                print(f"Block {block_index}: No block created")
-
     def _send_transactions_and_mine_concurrently(self, transactions: List[Transaction], submit_times: Dict[str, float], blocks_to_mine: int):
-        """并发发送交易和挖矿"""
+        """
+        并发发送交易和挖矿
+        
+        Args:
+            transactions: 交易列表
+            submit_times: 交易提交时间字典
+            blocks_to_mine: 需要挖掘的区块数量
+        """
         # 计算每个区块平均需要的交易数
         transactions_per_block = self.max_transactions_per_block
         
@@ -768,7 +1189,22 @@ class BlockchainSimulator:
                             break
 
     def _mine_one_block(self, node: Node, submit_times: Dict[str, float]):
-        """挖掘一个区块"""
+        """
+        挖掘一个区块
+        
+        Args:
+            node: 节点对象
+            submit_times: 交易提交时间字典
+            
+        Returns:
+            Block: 挖掘出的区块，如果没有挖掘出则返回None
+        """
+        # 记录开始挖矿的时间
+        mining_start_time = time.time()
+        
+        # 等待到下一个区块的时间间隔点
+        self._wait_for_next_block_interval(mining_start_time)
+        
         # 获取节点的待处理交易（不超过最大交易数限制）
         transactions_to_mine = node.pending_transactions[:self.max_transactions_per_block]
         
@@ -779,19 +1215,22 @@ class BlockchainSimulator:
         if not transactions_to_mine:
             return None
         
-        # 记录开始时间
-        start_time = time.time()
-        
         # 达成共识并创建区块
         block = self.consensus.reach_consensus(self.nodes, transactions_to_mine, self.transport)
         
         if block:
-            # 记录结束时间
-            end_time = time.time()
+            # 记录区块确认时间
+            block_confirm_time = time.time()
             
-            # 计算TPS（基于实际的时间窗口）
-            block_time = end_time - start_time
-            tps = len(block.transactions) / block_time if block_time > 0 else 0
+            # 计算TPS（基于区块间隔时间窗口）
+            if self._last_block_confirm_time > 0 and self.block_interval > 0:
+                # 使用区块间隔时间窗口计算TPS
+                time_window = block_confirm_time - self._last_block_confirm_time
+                tps = len(block.transactions) / time_window if time_window > 0 else 0
+            else:
+                # 使用区块处理时间计算TPS
+                block_processing_time = block_confirm_time - mining_start_time
+                tps = len(block.transactions) / block_processing_time if block_processing_time > 0 else 0
             
             # 计算区块大小
             block_size = block.get_size()
@@ -806,12 +1245,15 @@ class BlockchainSimulator:
                 if tx.tx_id in submit_times:
                     self.transaction_confirm_times.append(confirm_time - submit_times[tx.tx_id])
             
+            # 更新上一个区块的确认时间
+            self._update_block_confirm_time(block_confirm_time)
+            
             # 记录区块信息
             block_info = {
                 'block_height': len(self.nodes[0].blockchain) - 1,  # 区块高度为当前区块链长度减1
                 'transaction_count': len(block.transactions),
                 'block_size': block_size,
-                'block_time': block_time,
+                'block_time': block_confirm_time - mining_start_time,  # 区块处理时间
                 'tps': tps
             }
             self.block_tps_history.append(block_info)
@@ -824,40 +1266,15 @@ class BlockchainSimulator:
             
             print(f"Block #{block_height} mined: {len(block.transactions)} transactions, "
                   f"Total: {total_transactions} transactions, "
-                  f"Size: {block_size} bytes, Time: {block_time:.2f}s, TPS: {tps:.2f}")
+                  f"Size: {block_size} bytes, Time: {block_confirm_time - mining_start_time:.2f}s, TPS: {tps:.2f}")
             
             return block
         return None
 
-    def _send_transactions_at_rate(self, transactions: List[Transaction]):
-        """按照指定速率发送交易"""
-        if not self.transaction_send_rate or self.transaction_send_rate <= 0:
-            return
-            
-        # 计算每个交易之间的时间间隔
-        interval = 1.0 / self.transaction_send_rate
-        
-        for i, tx in enumerate(transactions):
-            # 计算应该发送的时间点
-            expected_time = i * interval
-            
-            # 获取当前时间
-            current_time = time.time()
-            
-            # 计算需要等待的时间
-            elapsed_time = current_time - transactions[0].timestamp
-            wait_time = expected_time - elapsed_time
-            
-            # 如果需要等待，则等待
-            if wait_time > 0:
-                time.sleep(wait_time)
-            
-            # 随机选择一个节点发送交易
-            node = random.choice(self.nodes)
-            node.add_transaction(tx)
-
     def _plot_confirmation_time_distribution(self):
-        """绘制交易确认时间分布图并保存到results文件夹"""
+        """
+        绘制交易确认时间分布图并保存到results文件夹
+        """
         if not HAS_MATPLOTLIB:
             print("Skipping confirmation time distribution plotting due to missing matplotlib")
             return
@@ -885,7 +1302,9 @@ class BlockchainSimulator:
         print(f"Confirmation time distribution chart saved to {filename}")
 
     def _save_block_details(self):
-        """将区块和交易的详细信息以JSON格式保存到data文件夹下的文件中"""
+        """
+        将区块和交易的详细信息以JSON格式保存到data文件夹下的文件中
+        """
         # 创建data目录
         os.makedirs('data', exist_ok=True)
         
@@ -951,7 +1370,9 @@ class BlockchainSimulator:
         print(f"区块详细信息已保存到 {filename}")
 
     def _plot_tps_chart(self):
-        """绘制TPS图表并保存到results文件夹"""
+        """
+        绘制TPS图表并保存到results文件夹
+        """
         if not HAS_MATPLOTLIB:
             print("Skipping TPS chart plotting due to missing matplotlib")
             return
@@ -983,17 +1404,204 @@ class BlockchainSimulator:
         print(f"TPS chart saved to {filename}")
 
 
+def interactive_setup():
+    """
+    交互式设置模拟器参数
+    
+    Returns:
+        dict: 包含所有配置参数的字典
+    """
+    print(r"""
+  ____  _            _        _     _            _             
+ |  _ \| |          | |      (_)   | |          | |            
+ | |_) | | ___   ___| | _____ _ ___| |__   ___  | |_ ___  _ __ 
+ |  _ <| |/ _ \ / __| |/ / _ \ / __| '_ \ / _ \ | __/ _ \| '__|
+ | |_) | |  __/ | | |   <  __/ \__ \ | | |  __/ | || (_) | |   
+ |____/|_|\___/ \___|_|\_\___|_|___/_| |_|\___|  \__\___/|_|   
+                                                               
+    """)
+    print("=" * 60)
+    print("           区块链模拟器 - 由Linpeng Jia与通义灵码共同协作开发")
+    print("=" * 60)
+    print("本项目是一个教育和研究平台，用于理解不同共识机制在各种网络条件下的性能表现。")
+    print()
+    
+    # 设置节点数量
+    while True:
+        try:
+            node_count = int(input("请输入节点数量 (默认为20): ") or "20")
+            if node_count > 0:
+                break
+            else:
+                print("节点数量必须大于0，请重新输入。")
+        except ValueError:
+            print("请输入有效的整数。")
+    
+    # 设置共识算法
+    consensus_options = {
+        "1": ConsensusType.POW,
+        "2": ConsensusType.PBFT,
+        "3": ConsensusType.HOTSTUFF,
+        "4": ConsensusType.DUMBO
+    }
+    print("\n可选的共识算法:")
+    print("1. POW (工作量证明)")
+    print("2. PBFT (实用拜占庭容错)")
+    print("3. HOTSTUFF (HotStuff共识)")
+    print("4. DUMBO (Dumbo共识)")
+    
+    while True:
+        consensus_choice = input("请选择共识算法 (默认为1): ") or "1"
+        if consensus_choice in consensus_options:
+            consensus_type = consensus_options[consensus_choice]
+            break
+        else:
+            print("无效选择，请输入1-4之间的数字。")
+    
+    # 设置网络协议
+    protocol_options = {
+        "1": NetworkProtocol.DIRECT,
+        "2": NetworkProtocol.GOSSIP
+    }
+    print("\n可选的网络协议:")
+    print("1. DIRECT (直接广播)")
+    print("2. GOSSIP (Gossip协议)")
+    
+    while True:
+        protocol_choice = input("请选择网络协议 (默认为2): ") or "2"
+        if protocol_choice in protocol_options:
+            network_protocol = protocol_options[protocol_choice]
+            break
+        else:
+            print("无效选择，请输入1或2。")
+    
+    # 设置交易发送速率
+    while True:
+        try:
+            rate_input = input("请输入交易发送速率 (txs/sec，输入0或回车表示不设置): ") or "0"
+            transaction_send_rate = float(rate_input) if float(rate_input) > 0 else None
+            break
+        except ValueError:
+            print("请输入有效的数字。")
+    
+    # 设置每个区块最大交易数
+    while True:
+        try:
+            max_tx_per_block = int(input("请输入每个区块最大交易数 (默认为256): ") or "256")
+            if max_tx_per_block > 0:
+                break
+            else:
+                print("交易数必须大于0，请重新输入。")
+        except ValueError:
+            print("请输入有效的整数。")
+    
+    # 设置每笔交易大小
+    while True:
+        try:
+            transaction_size = int(input("请输入每笔交易大小 (字节，默认为300): ") or "300")
+            if transaction_size > 0:
+                break
+            else:
+                print("交易大小必须大于0，请重新输入。")
+        except ValueError:
+            print("请输入有效的整数。")
+    
+    # 设置出块间隔
+    while True:
+        try:
+            block_interval = float(input("请输入出块间隔 (秒，默认为0表示无间隔): ") or "0")
+            if block_interval >= 0:
+                break
+            else:
+                print("出块间隔必须大于等于0，请重新输入。")
+        except ValueError:
+            print("请输入有效的数字。")
+    
+    # 设置交易数量
+    while True:
+        try:
+            transaction_count = int(input("请输入模拟交易总数 (默认为10000): ") or "10000")
+            if transaction_count > 0:
+                break
+            else:
+                print("交易总数必须大于0，请重新输入。")
+        except ValueError:
+            print("请输入有效的整数。")
+    
+    # 设置挖掘区块数
+    while True:
+        try:
+            blocks_to_mine = int(input("请输入需要挖掘的区块数 (默认为50): ") or "50")
+            if blocks_to_mine > 0:
+                break
+            else:
+                print("区块数必须大于0，请重新输入。")
+        except ValueError:
+            print("请输入有效的整数。")
+    
+    return {
+        "node_count": node_count,
+        "consensus_type": consensus_type,
+        "network_protocol": network_protocol,
+        "transaction_send_rate": transaction_send_rate,
+        "max_transactions_per_block": max_tx_per_block,
+        "transaction_size": transaction_size,
+        "block_interval": block_interval,
+        "transaction_count": transaction_count,
+        "blocks_to_mine": blocks_to_mine
+    }
+
+
 # 使用示例
 if __name__ == "__main__":
-    # 创建模拟器实例
-    simulator = BlockchainSimulator(
-        node_count=20,
-        consensus_type=ConsensusType.POW,
-        network_protocol=NetworkProtocol.GOSSIP,
-        transaction_send_rate=1000.0,  # 1000 transactions per second
-        max_transactions_per_block=256,  # 每个区块最多256笔交易
-        transaction_size=300  # 每笔交易300字节
-    )
+    print(r"""
+  ____  _            _        _     _            _             
+ |  _ \| |          | |      (_)   | |          | |            
+ | |_) | | ___   ___| | _____ _ ___| |__   ___  | |_ ___  _ __ 
+ |  _ <| |/ _ \ / __| |/ / _ \ / __| '_ \ / _ \ | __/ _ \| '__|
+ | |_) | |  __/ | | |   <  __/ \__ \ | | |  __/ | || (_) | |   
+ |____/|_|\___/ \___|_|\_\___|_|___/_| |_|\___|  \__\___/|_|   
+                                                               
+    """)
+    print("=" * 60)
+    print("           区块链模拟器 - 由Linpeng Jia与通义灵码共同协作开发")
+    print("=" * 60)
+    print("1. 交互式设置参数")
+    print("2. 使用默认参数")
     
-    # 运行模拟
-    simulator.run_simulation(transaction_count=10000, blocks_to_mine=50)
+    choice = input("请选择启动方式 (默认为1): ") or "1"
+    
+    if choice == "2":
+        # 使用默认参数
+        simulator = BlockchainSimulator(
+            node_count=20,
+            consensus_type=ConsensusType.POW,
+            network_protocol=NetworkProtocol.GOSSIP,
+            transaction_send_rate=1000.0,  # 1000 transactions per second
+            max_transactions_per_block=256,  # 每个区块最多256笔交易
+            transaction_size=300,  # 每笔交易300字节
+            block_interval=0.0  # 无出块间隔
+        )
+        
+        # 运行模拟
+        simulator.run_simulation(transaction_count=10000, blocks_to_mine=50)
+    else:
+        # 交互式设置参数
+        params = interactive_setup()
+        
+        # 创建模拟器实例
+        simulator = BlockchainSimulator(
+            node_count=params["node_count"],
+            consensus_type=params["consensus_type"],
+            network_protocol=params["network_protocol"],
+            transaction_send_rate=params["transaction_send_rate"],
+            max_transactions_per_block=params["max_transactions_per_block"],
+            transaction_size=params["transaction_size"],
+            block_interval=params["block_interval"]
+        )
+        
+        # 运行模拟
+        simulator.run_simulation(
+            transaction_count=params["transaction_count"],
+            blocks_to_mine=params["blocks_to_mine"]
+        )
