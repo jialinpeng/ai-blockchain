@@ -10,6 +10,9 @@ results/
 outputs/
 logs/
 
+# 自动提交脚本
+git-auto-commit.sh
+
 # C extensions
 *.so
 
