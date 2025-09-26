@@ -62,7 +62,7 @@ class BlockchainSimulator:
         # 初始化网络拓扑和传输层
         self.topology = NetworkTopology(self.nodes)
         self.topology.generate_topology(network_protocol)
-        self.transport = NetworkTransport(self.topology, network_protocol, network_bandwidth=self.network_bandwidth)
+        self.transport = NetworkTransport(self.topology, network_protocol)
         
         # 初始化共识算法
         if consensus_type == ConsensusType.POW:

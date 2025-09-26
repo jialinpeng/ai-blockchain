@@ -118,6 +118,8 @@ class NetworkTransport:
         self.protocol = protocol
         # 跟踪节点间的数据传输量
         self.data_transfer_stats = defaultdict(lambda: defaultdict(int))
+        # 存储传输日志
+        self.transfer_logs = []
 
     def broadcast_transactions(self, sender_id: int, transactions: List[Transaction]):
         """
@@ -140,6 +142,15 @@ class NetworkTransport:
                     node.pending_transactions.extend(transactions)
                     # 记录数据传输量
                     self.data_transfer_stats[sender_id][node.node_id] += transaction_count
+                    # 记录传输日志
+                    self.transfer_logs.append({
+                        'timestamp': time.time(),
+                        'sender': sender_id,
+                        'receiver': node.node_id,
+                        'transaction_count': transaction_count,
+                        'protocol': 'DIRECT',
+                        'action': 'broadcast_transactions'
+                    })
         elif self.protocol == NetworkProtocol.GOSSIP:
             self._gossip_transactions(sender_id, transactions)
 
@@ -160,6 +171,16 @@ class NetworkTransport:
         if not sender_node:
             return
             
+        # 记录初始传输日志
+        self.transfer_logs.append({
+            'timestamp': time.time(),
+            'sender': sender_id,
+            'receiver': 'multiple',
+            'transaction_count': len(transactions),
+            'protocol': 'GOSSIP',
+            'action': 'initial_gossip_broadcast'
+        })
+            
         # 首先将交易发送给部分节点
         initial_nodes = random.sample(nodes, max(1, len(nodes) // 3))
         for node in initial_nodes:
@@ -172,9 +193,27 @@ class NetworkTransport:
         for node in initial_nodes:
             if node.node_id != sender_id:  # 不记录给自己发送
                 self.data_transfer_stats[sender_id][node.node_id] += len(transactions)
+                # 记录传输日志
+                self.transfer_logs.append({
+                    'timestamp': time.time(),
+                    'sender': sender_id,
+                    'receiver': node.node_id,
+                    'transaction_count': len(transactions),
+                    'protocol': 'GOSSIP',
+                    'action': 'initial_gossip_send'
+                })
         
         # 模拟Gossip传播过程
-        for _ in range(max_gossip_rounds):  # 指定轮数传播
+        for round_num in range(max_gossip_rounds):  # 指定轮数传播
+            self.transfer_logs.append({
+                'timestamp': time.time(),
+                'sender': 'system',
+                'receiver': 'all',
+                'transaction_count': 0,
+                'protocol': 'GOSSIP',
+                'action': f'gossip_round_{round_num+1}_start'
+            })
+            
             for node in nodes:
                 if node.pending_transactions:  # 如果节点有交易
                     # 随机选择邻居节点进行传播
@@ -196,6 +235,24 @@ class NetworkTransport:
                             # 记录数据传输
                             if sent_count > 0:
                                 self.data_transfer_stats[node.node_id][neighbor_node.node_id] += sent_count
+                                # 记录传输日志
+                                self.transfer_logs.append({
+                                    'timestamp': time.time(),
+                                    'sender': node.node_id,
+                                    'receiver': neighbor_node.node_id,
+                                    'transaction_count': sent_count,
+                                    'protocol': 'GOSSIP',
+                                    'action': f'gossip_round_{round_num+1}_propagate'
+                                })
+            
+            self.transfer_logs.append({
+                'timestamp': time.time(),
+                'sender': 'system',
+                'receiver': 'all',
+                'transaction_count': 0,
+                'protocol': 'GOSSIP',
+                'action': f'gossip_round_{round_num+1}_end'
+            })
 
     def get_data_transfer_stats(self) -> Dict:
         """
@@ -205,3 +262,12 @@ class NetworkTransport:
             数据传输统计信息
         """
         return dict(self.data_transfer_stats)
+        
+    def get_transfer_logs(self) -> List[Dict]:
+        """
+        获取传输日志
+        
+        Returns:
+            传输日志列表
+        """
+        return self.transfer_logs

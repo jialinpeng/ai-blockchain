@@ -27,11 +27,14 @@
 - 吞吐量(TPS)测量与可视化
 - 以压缩JSON格式导出详细的区块和交易数据
 - 不同共识算法和网络协议之间的性能比较
+- **Web界面** - 基于浏览器的图形化界面，用于配置和监控模拟过程
 
 ### 可视化
 - 按区块高度划分的TPS（每秒交易数）图表
 - 交易确认时间累积分布函数(CDF)图
-- 自动生成性能报告
+- 节点间数据传输热力图
+- 网络拓扑可视化
+- 实时监控面板显示区块信息、统计信息和传输日志
 
 ## 快速开始
 
@@ -43,6 +46,7 @@
 ```bash
 git clone https://github.com/your-username/ai-blockchain.git
 cd ai-blockchain
+pip install -r requirements.txt
 ```
 
 ### 基本用法
@@ -73,6 +77,12 @@ simulator.run_simulation(
 )
 ```
 
+#### Web界面运行
+```bash
+python web_explorer.py
+```
+然后在浏览器中访问 `http://127.0.0.1:5000`
+
 ## 项目结构
 
 项目采用模块化设计，主要包含以下模块：
@@ -84,10 +94,15 @@ ai-blockchain/
 ├── consensus.py            # 共识算法模块，包含各种共识算法的实现
 ├── simulator.py            # 主模拟器模块，包含区块链模拟器主类
 ├── main.py                 # 主程序模块，包含交互式设置和程序入口
+├── web_explorer.py         # Web界面模块，提供基于浏览器的图形化界面
 ├── requirements.txt        # 项目依赖
+├── run_tests.py            # 测试运行器
+├── git-auto-commit.sh      # Git自动提交脚本
 ├── data/                   # 模拟输出数据（压缩格式）
 ├── results/                # 性能图表和图形
-└── README.md              # 本文件
+├── templates/              # Web界面模板
+├── tests/                  # 单元测试
+└── README.md               # 本文件
 ```
 
 ## 配置选项
@@ -99,10 +114,22 @@ ai-blockchain/
 | `node_count` | 网络中的节点数量 | 4 |
 | `consensus_type` | 要使用的共识算法 | PoW |
 | `network_protocol` | 网络通信协议 | DIRECT |
-| `transaction_send_rate` | 交易发送速率 (txs/sec) | None |
+| `transaction_send_rate` | 交易发送速率 (txs/sec) | 300 |
 | `max_transactions_per_block` | 每个区块的最大交易数 | 256 |
 | `transaction_size` | 每个交易的大小 (字节) | 300 |
 | `block_interval` | 出块间隔（秒） | 3.0 |
+
+## Web界面功能
+
+Web界面提供了一个直观的图形化操作环境，包括：
+
+1. **配置面板** - 设置模拟参数，如节点数量、共识算法、网络协议等
+2. **控制面板** - 启动和停止模拟过程
+3. **实时日志** - 显示模拟过程中的详细日志信息
+4. **区块信息** - 展示已确认区块的详细信息
+5. **统计信息** - 实时显示TPS和交易确认时间图表
+6. **网络拓扑** - 可视化展示节点间的连接关系
+7. **传输日志** - 显示节点间的数据包传输记录
 
 ## 贡献
 

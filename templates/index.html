@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>区块链浏览器</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 250px;
+            background: #343a40;
+            color: white;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+        }
+        .main-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        .status-running {
+            background-color: #28a745;
+        }
+        .status-stopped {
+            background-color: #dc3545;
+        }
+        .nav-item {
+            padding: 10px 15px;
+            margin: 5px 0;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .nav-item:hover {
+            background: #495057;
+        }
+        .nav-item.active {
+            background: #007bff;
+        }
+        .panel {
+            display: none;
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .panel.active {
+            display: block;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        .btn:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f8f9fa;
+        }
+        .chart-container {
+            margin: 20px 0;
+            height: 400px;
+        }
+        #network-graph {
+            width: 100%;
+            height: 400px;
+            border: 1px solid #ddd;
+        }
+        #log, #transfer-logs {
+            background: #000;
+            color: #00ff00;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+        .log-entry {
+            margin: 2px 0;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .grid-full {
+            grid-column: 1 / -1;
+        }
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            .container {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h2>区块链浏览器</h2>
+            <div class="nav-item active" onclick="showPanel('config')">配置与控制</div>
+            <div class="nav-item" onclick="showPanel('blocks')">区块信息</div>
+            <div class="nav-item" onclick="showPanel('stats')">统计信息</div>
+            <div class="nav-item" onclick="showPanel('network')">网络拓扑</div>
+        </div>
+        
+        <div class="main-content">
+            <div class="status-bar">
+                <div>
+                    状态: 
+                    <span id="status-indicator">
+                        <span class="status-indicator status-stopped"></span>
+                        <span id="status-text">已停止</span>
+                    </span>
+                </div>
+                <div id="block-count">区块数: 0</div>
+                <div id="tps-value">TPS: 0</div>
+            </div>
+            
+            <!-- 配置与控制面板 -->
+            <div id="config-panel" class="panel active">
+                <h2>模拟配置</h2>
+                <div class="grid">
+                    <div>
+                        <form id="config-form">
+                            <div class="form-group">
+                                <label for="node_count">节点数量:</label>
+                                <input type="number" id="node_count" name="node_count" value="4" min="1">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="consensus_type">共识算法:</label>
+                                <select id="consensus_type" name="consensus_type">
+                                    <option value="pow">PoW (工作量证明)</option>
+                                    <option value="pbft">PBFT (实用拜占庭容错)</option>
+                                    <option value="hotstuff">HotStuff</option>
+                                    <option value="dumbo">Dumbo</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="network_protocol">网络协议:</label>
+                                <select id="network_protocol" name="network_protocol">
+                                    <option value="direct">Direct (直接广播)</option>
+                                    <option value="gossip">Gossip (随机传播)</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="transaction_send_rate">交易发送速率 (txs/sec):</label>
+                                <input type="number" id="transaction_send_rate" name="transaction_send_rate" value="1000" min="1">
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <div>
+                        <div class="form-group">
+                            <label for="max_transactions_per_block">区块最大交易数:</label>
+                            <input type="number" id="max_transactions_per_block" name="max_transactions_per_block" value="256" min="1">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="transaction_count">总交易数:</label>
+                            <input type="number" id="transaction_count" name="transaction_count" value="1000" min="1">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="blocks_to_mine">区块数:</label>
+                            <input type="number" id="blocks_to_mine" name="blocks_to_mine" value="10" min="1">
+                        </div>
+                        
+                        <button type="button" id="start-btn" class="btn btn-primary" onclick="startSimulation()">开始模拟</button>
+                        <button type="button" id="stop-btn" class="btn btn-danger" onclick="stopSimulation()" disabled>停止模拟</button>
+                    </div>
+                    
+                    <div class="grid-full">
+                        <h3>模拟日志</h3>
+                        <div id="log"></div>
+                    </div>
+                    
+                    <div class="grid-full">
+                        <h3>传输日志</h3>
+                        <div id="transfer-logs"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 区块信息面板 -->
+            <div id="blocks-panel" class="panel">
+                <h2>区块信息</h2>
+                <table id="blocks-table">
+                    <thead>
+                        <tr>
+                            <th>高度</th>
+                            <th>哈希</th>
+                            <th>交易数</th>
+                            <th>时间戳</th>
+                            <th>大小(字节)</th>
+                            <th>Nonce</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- 统计信息面板 -->
+            <div id="stats-panel" class="panel">
+                <h2>统计信息</h2>
+                <div class="grid">
+                    <div>
+                        <h3>TPS (每秒交易数)</h3>
+                        <div class="chart-container">
+                            <canvas id="tps-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h3>交易确认时间</h3>
+                        <div class="chart-container">
+                            <canvas id="confirmation-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="grid-full">
+                        <h3>实时统计</h3>
+                        <div id="realtime-stats">
+                            <p>总区块数: <span id="total-blocks">0</span></p>
+                            <p>总交易数: <span id="total-transactions">0</span></p>
+                            <p>平均TPS: <span id="avg-tps">0</span></p>
+                            <p>平均确认时间: <span id="avg-confirmation-time">0</span> 秒</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 网络拓扑面板 -->
+            <div id="network-panel" class="panel">
+                <h2>网络拓扑</h2>
+                <div id="network-graph"></div>
+                <div id="network-info">
+                    <h3>网络信息</h3>
+                    <p>节点数: <span id="node-count">0</span></p>
+                    <p>连接数: <span id="connection-count">0</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let tpsChart = null;
+        let confirmationChart = null;
+        let networkGraph = null;
+        let updateInterval = null;
+        let lastTransferLogTime = 0;
+        let currentStats = {};
+        let previousStatus = false; // 跟踪上一次的运行状态
+
+        // 页面加载完成后获取配置
+        document.addEventListener('DOMContentLoaded', function() {
+            loadConfig();
+            startUpdating();
+        });
+
+        // 显示指定面板
+        function showPanel(panelName) {
+            // 隐藏所有面板
+            document.querySelectorAll('.panel').forEach(panel => {
+                panel.classList.remove('active');
+            });
+            
+            // 移除所有导航项的活动状态
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            // 显示指定面板
+            document.getElementById(panelName + '-panel').classList.add('active');
+            event.target.classList.add('active');
+            
+            // 根据面板类型更新数据
+            switch(panelName) {
+                case 'blocks':
+                    updateBlocks();
+                    break;
+                case 'stats':
+                    updateStats();
+                    break;
+                case 'network':
+                    updateNetwork();
+                    break;
+            }
+        }
+
+        // 加载配置
+        function loadConfig() {
+            fetch('/api/config')
+                .then(response => response.json())
+                .then(data => {
+                    if (Object.keys(data).length > 0) {
+                        document.getElementById('node_count').value = data.node_count || 4;
+                        document.getElementById('consensus_type').value = data.consensus_type || 'pow';
+                        document.getElementById('network_protocol').value = data.network_protocol || 'direct';
+                        document.getElementById('transaction_send_rate').value = data.transaction_send_rate || 1000;
+                        document.getElementById('max_transactions_per_block').value = data.max_transactions_per_block || 256;
+                        document.getElementById('transaction_count').value = data.transaction_count || 1000;
+                        document.getElementById('blocks_to_mine').value = data.blocks_to_mine || 10;
+                    }
+                })
+                .catch(error => console.error('加载配置失败:', error));
+        }
+
+        // 保存配置
+        function saveConfig() {
+            const config = {
+                node_count: document.getElementById('node_count').value,
+                consensus_type: document.getElementById('consensus_type').value,
+                network_protocol: document.getElementById('network_protocol').value,
+                transaction_send_rate: document.getElementById('transaction_send_rate').value,
+                max_transactions_per_block: document.getElementById('max_transactions_per_block').value,
+                transaction_count: document.getElementById('transaction_count').value,
+                blocks_to_mine: document.getElementById('blocks_to_mine').value
+            };
+
+            fetch('/api/config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(config)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    addLog('配置已保存');
+                } else {
+                    addLog('配置保存失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                addLog('配置保存失败: ' + error);
+            });
+        }
+
+        // 开始模拟
+        function startSimulation() {
+            saveConfig();
+            
+            fetch('/api/start', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    addLog('模拟已启动');
+                    document.getElementById('start-btn').disabled = true;
+                    document.getElementById('stop-btn').disabled = false;
+                    // 清空之前的日志
+                    document.getElementById('transfer-logs').innerHTML = '';
+                    lastTransferLogTime = 0;
+                } else {
+                    addLog('启动失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                addLog('启动失败: ' + error);
+            });
+        }
+
+        // 停止模拟
+        function stopSimulation() {
+            fetch('/api/stop', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    addLog('模拟已停止');
+                    document.getElementById('start-btn').disabled = false;
+                    document.getElementById('stop-btn').disabled = true;
+                } else {
+                    addLog('停止失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                addLog('停止失败: ' + error);
+            });
+        }
+
+        // 更新状态
+        function updateStatus() {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    const statusIndicator = document.querySelector('.status-indicator');
+                    const statusText = document.getElementById('status-text');
+                    
+                    if (data.is_running) {
+                        statusIndicator.className = 'status-indicator status-running';
+                        statusText.textContent = '运行中';
+                        // 更新按钮状态
+                        document.getElementById('start-btn').disabled = true;
+                        document.getElementById('stop-btn').disabled = false;
+                    } else {
+                        statusIndicator.className = 'status-indicator status-stopped';
+                        statusText.textContent = '已停止';
+                        // 检查状态变化，如果从运行变为停止，则重置按钮
+                        if (previousStatus === true) {
+                            document.getElementById('start-btn').disabled = false;
+                            document.getElementById('stop-btn').disabled = true;
+                            addLog('模拟已完成');
+                        }
+                    }
+                    
+                    // 更新上一次状态
+                    previousStatus = data.is_running;
+                })
+                .catch(error => console.error('更新状态失败:', error));
+        }
+
+        // 更新区块信息
+        function updateBlocks() {
+            fetch('/api/blocks')
+                .then(response => response.json())
+                .then(data => {
+                    const tbody = document.querySelector('#blocks-table tbody');
+                    tbody.innerHTML = '';
+                    
+                    data.forEach(block => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${block.height}</td>
+                            <td>${block.hash.substring(0, 16)}...</td>
+                            <td>${block.transaction_count}</td>
+                            <td>${new Date(block.timestamp * 1000).toLocaleString()}</td>
+                            <td>${block.size}</td>
+                            <td>${block.nonce}</td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                    
+                    // 更新状态栏区块数
+                    document.getElementById('block-count').textContent = `区块数: ${data.length}`;
+                })
+                .catch(error => console.error('更新区块信息失败:', error));
+        }
+
+        // 更新统计信息
+        function updateStats() {
+            fetch('/api/stats')
+                .then(response => response.json())
+                .then(data => {
+                    currentStats = data;
+                    
+                    // 更新实时统计信息
+                    document.getElementById('total-blocks').textContent = data.tps_history ? data.tps_history.length : 0;
+                    
+                    let totalTransactions = 0;
+                    let totalTps = 0;
+                    let tpsCount = 0;
+                    
+                    if (data.tps_history) {
+                        data.tps_history.forEach(item => {
+                            totalTransactions += item.transaction_count;
+                            totalTps += item.tps;
+                            tpsCount++;
+                        });
+                    }
+                    
+                    document.getElementById('total-transactions').textContent = totalTransactions;
+                    document.getElementById('avg-tps').textContent = tpsCount > 0 ? (totalTps / tpsCount).toFixed(2) : 0;
+                    
+                    // 更新确认时间
+                    let totalConfirmationTime = 0;
+                    if (data.confirmation_times) {
+                        data.confirmation_times.forEach(time => {
+                            totalConfirmationTime += time;
+                        });
+                        const avgConfirmationTime = data.confirmation_times.length > 0 ? 
+                            (totalConfirmationTime / data.confirmation_times.length).toFixed(4) : 0;
+                        document.getElementById('avg-confirmation-time').textContent = avgConfirmationTime;
+                    }
+                    
+                    // 更新TPS图表
+                    if (data.tps_history && data.tps_history.length > 0) {
+                        const blockHeights = data.tps_history.map(item => item.block_height);
+                        const tpsValues = data.tps_history.map(item => item.tps);
+                        
+                        if (!tpsChart) {
+                            const ctx = document.getElementById('tps-chart').getContext('2d');
+                            tpsChart = new Chart(ctx, {
+                                type: 'line',
+                                data: {
+                                    labels: blockHeights,
+                                    datasets: [{
+                                        label: 'TPS (每秒交易数)',
+                                        data: tpsValues,
+                                        borderColor: 'rgb(75, 192, 192)',
+                                        tension: 0.1,
+                                        fill: false
+                                    }]
+                                },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    scales: {
+                                        y: {
+                                            beginAtZero: true
+                                        }
+                                    }
+                                }
+                            });
+                        } else {
+                            tpsChart.data.labels = blockHeights;
+                            tpsChart.data.datasets[0].data = tpsValues;
+                            tpsChart.update();
+                        }
+                        
+                        // 更新状态栏TPS
+                        const latestTps = tpsValues[tpsValues.length - 1];
+                        document.getElementById('tps-value').textContent = `TPS: ${latestTps.toFixed(2)}`;
+                    }
+                    
+                    // 更新确认时间图表
+                    if (data.confirmation_times && data.confirmation_times.length > 0) {
+                        if (!confirmationChart) {
+                            const ctx = document.getElementById('confirmation-chart').getContext('2d');
+                            confirmationChart = new Chart(ctx, {
+                                type: 'line',
+                                data: {
+                                    labels: Array.from({length: data.confirmation_times.length}, (_, i) => i),
+                                    datasets: [{
+                                        label: '交易确认时间',
+                                        data: data.confirmation_times,
+                                        borderColor: 'rgb(255, 99, 132)',
+                                        tension: 0.1,
+                                        fill: false
+                                    }]
+                                },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    scales: {
+                                        x: {
+                                            title: {
+                                                display: true,
+                                                text: '交易索引'
+                                            }
+                                        },
+                                        y: {
+                                            title: {
+                                                display: true,
+                                                text: '确认时间 (秒)'
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        } else {
+                            confirmationChart.data.labels = Array.from({length: data.confirmation_times.length}, (_, i) => i);
+                            confirmationChart.data.datasets[0].data = data.confirmation_times;
+                            confirmationChart.update();
+                        }
+                    }
+                })
+                .catch(error => console.error('更新统计信息失败:', error));
+        }
+
+        // 更新网络拓扑
+        function updateNetwork() {
+            fetch('/api/network')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.nodes && data.connections) {
+                        drawNetworkGraph(data);
+                        
+                        // 更新网络信息
+                        document.getElementById('node-count').textContent = data.nodes.length;
+                        
+                        let connectionCount = 0;
+                        Object.values(data.connections).forEach(targets => {
+                            connectionCount += Object.keys(targets).length;
+                        });
+                        document.getElementById('connection-count').textContent = connectionCount;
+                    }
+                })
+                .catch(error => console.error('更新网络拓扑失败:', error));
+        }
+
+        // 更新传输日志
+        function updateTransferLogs() {
+            fetch('/api/logs')
+                .then(response => response.json())
+                .then(data => {
+                    const logContainer = document.getElementById('transfer-logs');
+                    
+                    // 只显示新的日志条目
+                    const newLogs = data.filter(log => log.timestamp > lastTransferLogTime);
+                    
+                    if (newLogs.length > 0) {
+                        newLogs.forEach(log => {
+                            const logEntry = document.createElement('div');
+                            logEntry.className = 'log-entry';
+                            const time = new Date(log.timestamp * 1000).toLocaleTimeString();
+                            logEntry.innerHTML = `[${time}] ${log.action} - 节点${log.sender} -> 节点${log.receiver} (${log.transaction_count} 个交易, ${log.protocol})`;
+                            logContainer.appendChild(logEntry);
+                            
+                            // 更新最后日志时间
+                            if (log.timestamp > lastTransferLogTime) {
+                                lastTransferLogTime = log.timestamp;
+                            }
+                        });
+                        
+                        // 滚动到底部
+                        logContainer.scrollTop = logContainer.scrollHeight;
+                    }
+                })
+                .catch(error => console.error('更新传输日志失败:', error));
+        }
+
+        // 绘制网络拓扑图
+        function drawNetworkGraph(data) {
+            // 清空之前的图形
+            const graphContainer = document.getElementById('network-graph');
+            graphContainer.innerHTML = '';
+            
+            const width = graphContainer.clientWidth;
+            const height = 400;
+            
+            const svg = d3.select('#network-graph')
+                .append('svg')
+                .attr('width', width)
+                .attr('height', height);
+            
+            // 创建力导向图布局
+            const simulation = d3.forceSimulation(data.nodes.map(id => ({ id })))
+                .force('link', d3.forceLink(
+                    Object.entries(data.connections).flatMap(([source, targets]) => 
+                        Object.values(targets).map(target => ({ source: parseInt(source), target }))
+                    )
+                ).id(d => d.id).distance(100))
+                .force('charge', d3.forceManyBody().strength(-300))
+                .force('center', d3.forceCenter(width / 2, height / 2));
+            
+            // 绘制连线
+            const link = svg.append('g')
+                .selectAll('line')
+                .data(simulation.force('link').links())
+                .enter()
+                .append('line')
+                .attr('stroke', '#999')
+                .attr('stroke-opacity', 0.6)
+                .attr('stroke-width', 2);
+            
+            // 绘制节点
+            const node = svg.append('g')
+                .selectAll('circle')
+                .data(simulation.nodes())
+                .enter()
+                .append('circle')
+                .attr('r', 20)
+                .attr('fill', '#007bff')
+                .call(drag(simulation));
+            
+            // 添加节点标签
+            const label = svg.append('g')
+                .selectAll('text')
+                .data(simulation.nodes())
+                .enter()
+                .append('text')
+                .text(d => `Node ${d.id}`)
+                .attr('text-anchor', 'middle')
+                .attr('dy', 5)
+                .attr('fill', 'white')
+                .attr('font-size', '12px');
+            
+            // 更新位置
+            simulation.on('tick', () => {
+                link
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+                
+                node
+                    .attr('cx', d => d.x = Math.max(20, Math.min(width - 20, d.x)))
+                    .attr('cy', d => d.y = Math.max(20, Math.min(height - 20, d.y)));
+                
+                label
+                    .attr('x', d => d.x)
+                    .attr('y', d => d.y);
+            });
+            
+            // 拖拽功能
+            function drag(simulation) {
+                function dragstarted(event, d) {
+                    if (!event.active) simulation.alphaTarget(0.3).restart();
+                    d.fx = d.x;
+                    d.fy = d.y;
+                }
+                
+                function dragged(event, d) {
+                    d.fx = event.x;
+                    d.fy = event.y;
+                }
+                
+                function dragended(event, d) {
+                    if (!event.active) simulation.alphaTarget(0);
+                    d.fx = null;
+                    d.fy = null;
+                }
+                
+                return d3.drag()
+                    .on('start', dragstarted)
+                    .on('drag', dragged)
+                    .on('end', dragended);
+            }
+        }
+
+        // 添加日志
+        function addLog(message) {
+            const log = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.innerHTML = `[${time}] ${message}`;
+            log.appendChild(logEntry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        // 开始定时更新
+        function startUpdating() {
+            updateInterval = setInterval(() => {
+                updateStatus();
+                
+                // 如果正在运行，更新所有数据
+                fetch('/api/status')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.is_running) {
+                            updateBlocks();
+                            updateStats();
+                            updateNetwork();
+                            updateTransferLogs();
+                        }
+                    });
+            }, 1000); // 每1秒更新一次，提高实时性
+        }
+
+        // 页面关闭时清理
+        window.addEventListener('beforeunload', () => {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+            }
+        });
+    </script>
+</body>
+</html>

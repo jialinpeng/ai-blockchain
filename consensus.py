@@ -13,6 +13,9 @@ class ConsensusAlgorithm(ABC):
     共识算法抽象基类
     """
     
+    def __init__(self, max_transactions_per_block: int = 256):
+        self.max_transactions_per_block = max_transactions_per_block
+
     @abstractmethod
     def validate_block(self, block: Block, previous_block: Optional[Block]) -> bool:
         """
@@ -176,19 +179,26 @@ class PoWConsensus(ConsensusAlgorithm):
             Block: 达成共识的区块，如果没有达成则返回None
         """
         if not transactions:
+            print("[PoW] 无待处理交易，跳过挖矿")
             return None
             
+        print(f"[PoW] 开始工作量证明共识，节点数: {len(nodes)}, 交易数: {len(transactions)}")
+        
         # 使用传输层广播交易
         transport.broadcast_transactions(nodes, transactions)
+        print(f"[PoW] 已广播 {len(transactions)} 笔交易到网络")
             
         # 模拟挖矿过程
-        for node in nodes:
+        print("[PoW] 各节点开始挖矿...")
+        for i, node in enumerate(nodes):
             previous_block = node.get_latest_block()
             block = self.create_block(node, previous_block)
             if block:
-                # 第一个完成的节点获胜
+                print(f"[PoW] 节点 {node.node_id} 成功挖矿，nonce: {block.nonce}")
+                print(f"[PoW] 区块哈希: {block.hash[:16]}...")
                 return block
                 
+        print("[PoW] 所有节点挖矿失败")
         return None
 
 
@@ -260,18 +270,46 @@ class PBFTConsensus(ConsensusAlgorithm):
             Block: 达成共识的区块，如果没有达成则返回None
         """
         if not transactions:
+            print("[PBFT] 无待处理交易，跳过共识")
             return None
             
+        print(f"[PBFT] 开始实用拜占庭容错共识，节点数: {len(nodes)}, 交易数: {len(transactions)}")
+        
         # 使用传输层广播交易
         transport.broadcast_transactions(nodes, transactions)
+        print(f"[PBFT] 已广播 {len(transactions)} 笔交易到网络")
         
         # 模拟网络传输延迟
         time.sleep(0.05)  # 50ms网络延迟
         
         # 选择主节点（简化版PBFT）
         primary_node = nodes[0]
+        print(f"[PBFT] 主节点: {primary_node.node_id}")
+        
+        # 预准备阶段
+        print("[PBFT] 预准备阶段 - 主节点广播提案")
+        time.sleep(0.02)
+        
+        # 准备阶段
+        print("[PBFT] 准备阶段 - 节点验证并广播准备消息")
+        prepared_count = len(nodes)  # 简化实现，假设所有节点都准备就绪
+        time.sleep(0.02)
+        print(f"[PBFT] {prepared_count}/{len(nodes)} 节点完成准备")
+        
+        # 提交阶段
+        print("[PBFT] 提交阶段 - 节点收集准备消息并广播提交消息")
+        committed_count = len(nodes)  # 简化实现，假设所有节点都提交
+        time.sleep(0.02)
+        print(f"[PBFT] {committed_count}/{len(nodes)} 节点完成提交")
+        
+        # 决策
         previous_block = primary_node.get_latest_block()
         block = self.create_block(primary_node, previous_block)
+        if block:
+            print(f"[PBFT] 共识达成，区块高度: {block.index}, 区块哈希: {block.hash[:16]}...")
+        else:
+            print("[PBFT] 共识失败")
+            
         return block
 
 
@@ -280,15 +318,16 @@ class HotStuffConsensus(ConsensusAlgorithm):
     HotStuff共识算法实现
     """
     
-    def __init__(self, max_transactions_per_block: int = 256):
+    def __init__(self, max_transactions_per_block: int = 256, pipeline_depth: int = 3):
         """
         初始化HotStuff共识算法
         
         Args:
             max_transactions_per_block: 每个区块最大交易数
+            pipeline_depth: 流水线深度
         """
-        self.max_transactions_per_block = max_transactions_per_block
-        self.pipeline_depth = 3  # 流水线深度
+        super().__init__(max_transactions_per_block)
+        self.pipeline_depth = pipeline_depth
         self.current_leader = 0  # 当前领导者索引
     
     def validate_block(self, block: Block, previous_block: Optional[Block]) -> bool:
@@ -353,26 +392,48 @@ class HotStuffConsensus(ConsensusAlgorithm):
             Block: 达成共识的区块，如果没有达成则返回None
         """
         if not transactions:
+            print("[HotStuff] 无待处理交易，跳过共识")
             return None
             
+        print(f"[HotStuff] 开始HotStuff共识，节点数: {len(nodes)}, 交易数: {len(transactions)}")
+        
         # 使用传输层广播交易
         transport.broadcast_transactions(nodes, transactions)
+        print(f"[HotStuff] 已广播 {len(transactions)} 笔交易到网络")
         
         # 模拟网络传输延迟
         time.sleep(0.03)  # 30ms网络延迟
         
         # HotStuff实现：领导者轮换
         leader_node = nodes[self.current_leader]
+        print(f"[HotStuff] 当前领导者: 节点 {leader_node.node_id}")
+        
+        # 提议阶段
+        print("[HotStuff] 领导者提议新区块")
+        time.sleep(0.02)
+        
+        # 投票阶段
+        print("[HotStuff] 节点对提议进行投票")
+        vote_count = len(nodes)  # 简化实现，假设所有节点都投票
+        time.sleep(0.02)
+        print(f"[HotStuff] 收到 {vote_count} 票")
+        
+        # 提交阶段
+        print("[HotStuff] 达成2f+1投票，提交区块")
+        time.sleep(0.02)
+        
         previous_block = leader_node.get_latest_block()
         block = self.create_block(leader_node, previous_block)
         
         # 轮换领导者
         self.current_leader = (self.current_leader + 1) % len(nodes)
+        print(f"[HotStuff] 领导者轮换至节点 {self.current_leader}")
         
-        # 模拟流水线效果：如果流水线中有多个区块正在处理，则整体处理时间会减少
-        # 流水线通过并行处理提高吞吐量，而不是增加单个区块的处理时间
-        # 这里我们不添加额外的延迟，而是通过领导者轮换来体现流水线效果
-        
+        if block:
+            print(f"[HotStuff] 共识达成，区块高度: {block.index}, 区块哈希: {block.hash[:16]}...")
+        else:
+            print("[HotStuff] 共识失败")
+            
         return block
 
 
