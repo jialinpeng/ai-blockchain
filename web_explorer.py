@@ -41,6 +41,9 @@ def config():
             'network_protocol': data.get('network_protocol', 'direct'),
             'transaction_send_rate': float(data.get('transaction_send_rate', 1000.0)),
             'max_transactions_per_block': int(data.get('max_transactions_per_block', 256)),
+            'transaction_size': int(data.get('transaction_size', 300)),
+            'block_interval': float(data.get('block_interval', 3.0)),
+            'network_bandwidth': int(data.get('network_bandwidth', 2500000)),
             'transaction_count': int(data.get('transaction_count', 1000)),
             'blocks_to_mine': int(data.get('blocks_to_mine', 10))
         }
@@ -63,7 +66,10 @@ def start_simulation():
             consensus_type=ConsensusType(simulation_config.get('consensus_type', 'pow')),
             network_protocol=NetworkProtocol(simulation_config.get('network_protocol', 'direct')),
             transaction_send_rate=simulation_config.get('transaction_send_rate', 1000.0),
-            max_transactions_per_block=simulation_config.get('max_transactions_per_block', 256)
+            max_transactions_per_block=simulation_config.get('max_transactions_per_block', 256),
+            transaction_size=simulation_config.get('transaction_size', 300),
+            block_interval=simulation_config.get('block_interval', 3.0),
+            network_bandwidth=simulation_config.get('network_bandwidth', 2500000)
         )
         
         # 更新状态
@@ -102,24 +108,64 @@ def get_status():
 def get_blocks():
     """获取区块信息"""
     if not simulator or not simulator.nodes:
-        return jsonify([])
-    
-    # 获取第一个节点的区块链（所有节点应该有相同的区块链）
-    blockchain = simulator.nodes[0].blockchain
-    
-    blocks_data = []
-    for i, block in enumerate(blockchain):
-        blocks_data.append({
-            'height': i,
-            'hash': block.hash,
-            'previous_hash': block.previous_hash,
-            'timestamp': block.timestamp,
-            'transaction_count': len(block.transactions),
-            'size': block.get_size(),
-            'nonce': block.nonce
+        return jsonify({
+            'blocks': [],
+            'total': 0
         })
     
-    return jsonify(blocks_data)
+    # 收集所有节点的区块，确保完整性
+    all_blocks = []
+    processed_hashes = set()  # 用于跟踪已处理的区块哈希
+    
+    for node in simulator.nodes:
+        for block in node.blockchain:
+            # 检查是否已经处理过该区块
+            if block.hash in processed_hashes:
+                continue
+            
+            # 添加到已处理集合
+            processed_hashes.add(block.hash)
+            
+            # 使用区块索引作为高度，确保连续性
+            height = block.index
+            
+            # 查找挖矿节点（即添加该区块的节点）
+            miner_id = None
+            for n in simulator.nodes:
+                # 检查节点的区块链中是否包含该区块，并且该区块是最新添加的
+                if len(n.blockchain) > height and n.blockchain[height].hash == block.hash:
+                    # 进一步检查该节点是否是挖矿节点（区块索引应该匹配）
+                    if len(n.blockchain) == height + 1:
+                        miner_id = n.node_id
+                        break
+            
+            all_blocks.append({
+                'height': height,
+                'hash': block.hash,
+                'previous_hash': block.previous_hash,
+                'timestamp': block.timestamp,
+                'transaction_count': len(block.transactions),
+                'size': block.get_size(),
+                'nonce': block.nonce,
+                'miner_id': miner_id  # 添加矿工节点ID
+            })
+    
+    # 按高度排序，确保连续性
+    all_blocks.sort(key=lambda x: x['height'])
+    
+    # 分页处理
+    page = request.args.get('page', 1, type=int)
+    size = request.args.get('size', 20, type=int)  # 默认每页20个区块
+    
+    start = (page - 1) * size
+    end = start + size
+    
+    paginated_blocks = all_blocks[start:end]
+    
+    return jsonify({
+        'blocks': paginated_blocks,
+        'total': len(all_blocks)
+    })
 
 @app.route('/api/stats')
 def get_stats():
@@ -130,7 +176,8 @@ def get_stats():
     stats = {
         'tps_history': simulator.block_tps_history,
         'confirmation_times': simulator.transaction_confirm_times,
-        'node_count': len(simulator.nodes) if simulator.nodes else 0
+        'node_count': len(simulator.nodes) if simulator.nodes else 0,
+        'block_count': len(simulator.nodes[0].blockchain) if simulator.nodes else 0  # 添加区块总数
     }
     
     # 网络拓扑信息
