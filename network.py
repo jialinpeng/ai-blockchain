@@ -1,65 +1,68 @@
-import json
-import time
 import random
-from typing import List, Dict
+import time
 from collections import defaultdict
 from enum import Enum
-
+from typing import List, Dict, Optional
 from core import Node, Transaction, Block
 
 
 class NetworkProtocol(Enum):
     """
-    网络协议类型枚举
+    网络协议枚举
     """
-    DIRECT = "direct"
-    GOSSIP = "gossip"
+    DIRECT = "direct"      # 直接连接（全连接）
+    GOSSIP = "gossip"      # Gossip协议
 
 
 class NetworkTopology:
     """
-    网络拓扑类，用于管理节点间的连接关系
+    网络拓扑类，用于定义节点间的连接关系
     """
     
-    def __init__(self, nodes: List[Node]):
+    def __init__(self, node_count: int, protocol: NetworkProtocol):
         """
         初始化网络拓扑
+        
+        Args:
+            node_count: 节点数量
+            protocol: 网络协议类型
+        """
+        self.node_count = node_count
+        self.protocol = protocol
+        self.adjacency_list: Dict[int, List[int]] = defaultdict(list)
+        self.nodes: List[Node] = []
+        self._build_topology()
+
+    def _build_topology(self):
+        """
+        构建网络拓扑结构
+        """
+        if self.protocol == NetworkProtocol.DIRECT:
+            # 全连接网络：每个节点都与其他所有节点直接连接
+            for i in range(self.node_count):
+                for j in range(self.node_count):
+                    if i != j:
+                        self.adjacency_list[i].append(j)
+        elif self.protocol == NetworkProtocol.GOSSIP:
+            # 部分连接网络：每个节点随机连接到部分其他节点
+            for i in range(self.node_count):
+                # 每个节点连接到大约30%的其他节点
+                connection_count = max(1, int(self.node_count * 0.3))
+                available_nodes = [j for j in range(self.node_count) if j != i]
+                self.adjacency_list[i] = random.sample(available_nodes, min(connection_count, len(available_nodes)))
+
+    def apply_to_nodes(self, nodes: List[Node]):
+        """
+        将网络拓扑应用到节点列表
         
         Args:
             nodes: 节点列表
         """
         self.nodes = nodes
-        self.adjacency_list: Dict[int, List[int]] = defaultdict(list)
-
-    def generate_topology(self, protocol: NetworkProtocol):
-        """
-        根据协议类型生成网络拓扑
-        
-        Args:
-            protocol: 网络协议类型
-        """
-        node_count = len(self.nodes)
-        self.adjacency_list.clear()
-        
-        if protocol == NetworkProtocol.DIRECT:
-            # 全连接拓扑
-            for i in range(node_count):
-                for j in range(node_count):
-                    if i != j:
-                        self.adjacency_list[i].append(j)
-        elif protocol == NetworkProtocol.GOSSIP:
-            # 随机部分连接拓扑
-            for i in range(node_count):
-                # 每个节点连接到约30%的其他节点
-                connection_count = max(1, int(node_count * 0.3))
-                other_nodes = list(range(node_count))
-                other_nodes.remove(i)
-                connected_nodes = random.sample(other_nodes, min(connection_count, len(other_nodes)))
-                self.adjacency_list[i].extend(connected_nodes)
 
     def get_neighbors(self, node_id: int) -> List[int]:
         """
-        获取节点的邻居节点列表
+        获取指定节点的邻居节点列表
         
         Args:
             node_id: 节点ID
@@ -68,37 +71,6 @@ class NetworkTopology:
             邻居节点ID列表
         """
         return self.adjacency_list.get(node_id, [])
-
-    def to_dict(self, data_stats: Dict = None) -> Dict:
-        """
-        将网络拓扑转换为字典
-        
-        Returns:
-            网络拓扑信息字典
-        """
-        result = {
-            'nodes': [node.node_id for node in self.nodes],
-            'adjacency_list': dict(self.adjacency_list)
-        }
-        
-        if data_stats:
-            result['data_stats'] = data_stats
-            
-        return result
-
-    def load_from_json(self, file_path: str):
-        """
-        从JSON文件加载网络拓扑
-        
-        Args:
-            file_path: JSON文件路径
-        """
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        self.adjacency_list.clear()
-        for node_id, neighbors in data['adjacency_list'].items():
-            self.adjacency_list[int(node_id)] = neighbors
 
 
 class NetworkTransport:
@@ -253,6 +225,87 @@ class NetworkTransport:
                 'protocol': 'GOSSIP',
                 'action': f'gossip_round_{round_num+1}_end'
             })
+
+    def broadcast_block(self, sender_id: int, block: Block):
+        """
+        广播区块到所有节点
+        
+        Args:
+            sender_id: 发送者节点ID
+            block: 区块对象
+        """
+        if not self.topology or not self.topology.nodes:
+            return
+            
+        nodes = self.topology.nodes
+        
+        if self.protocol == NetworkProtocol.DIRECT:
+            # 直接广播给所有节点
+            for node in nodes:
+                if node.node_id != sender_id:  # 不广播给自己
+                    # 检查区块是否已存在于节点的区块链中
+                    if not any(b.hash == block.hash for b in node.blockchain):
+                        node.add_block(block)
+                        # 记录数据传输量（区块大小以字节为单位）
+                        block_size = block.get_size()
+                        self.data_transfer_stats[sender_id][node.node_id] += block_size
+                        # 记录传输日志
+                        self.transfer_logs.append({
+                            'timestamp': time.time(),
+                            'sender': sender_id,
+                            'receiver': node.node_id,
+                            'block_size': block_size,
+                            'block_hash': block.hash[:16],  # 只记录前16个字符
+                            'protocol': 'DIRECT',
+                            'action': 'broadcast_block'
+                        })
+        elif self.protocol == NetworkProtocol.GOSSIP:
+            self._gossip_block(sender_id, block)
+
+    def _gossip_block(self, sender_id: int, block: Block):
+        """
+        使用Gossip协议传播区块
+        
+        Args:
+            sender_id: 发送者节点ID
+            block: 区块对象
+        """
+        if not self.topology or not self.topology.nodes:
+            return
+            
+        nodes = self.topology.nodes
+        block_size = block.get_size()
+        
+        # 记录初始传输日志
+        self.transfer_logs.append({
+            'timestamp': time.time(),
+            'sender': sender_id,
+            'receiver': 'multiple',
+            'block_size': block_size,
+            'block_hash': block.hash[:16],
+            'protocol': 'GOSSIP',
+            'action': 'initial_gossip_block_broadcast'
+        })
+        
+        # 首先将区块发送给部分节点
+        initial_nodes = random.sample(nodes, max(1, len(nodes) // 3))
+        for node in initial_nodes:
+            if node.node_id != sender_id:  # 不发送给自己
+                # 检查区块是否已存在于节点的区块链中
+                if not any(b.hash == block.hash for b in node.blockchain):
+                    node.add_block(block)
+                    # 记录数据传输量
+                    self.data_transfer_stats[sender_id][node.node_id] += block_size
+                    # 记录传输日志
+                    self.transfer_logs.append({
+                        'timestamp': time.time(),
+                        'sender': sender_id,
+                        'receiver': node.node_id,
+                        'block_size': block_size,
+                        'block_hash': block.hash[:16],
+                        'protocol': 'GOSSIP',
+                        'action': 'initial_gossip_block_send'
+                    })
 
     def get_data_transfer_stats(self) -> Dict:
         """

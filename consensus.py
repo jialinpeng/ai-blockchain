@@ -1,11 +1,11 @@
-import time
 import hashlib
+import time
 import random
+import threading
+import queue
+from typing import List, Optional, Tuple
 from abc import ABC, abstractmethod
-from typing import List, Optional
-
-from core import Node, Block, Transaction
-from network import NetworkTransport
+from core import Block, Transaction, Node
 
 
 class ConsensusAlgorithm(ABC):
@@ -13,9 +13,6 @@ class ConsensusAlgorithm(ABC):
     共识算法抽象基类
     """
     
-    def __init__(self, max_transactions_per_block: int = 256):
-        self.max_transactions_per_block = max_transactions_per_block
-
     @abstractmethod
     def validate_block(self, block: Block, previous_block: Optional[Block]) -> bool:
         """
@@ -45,7 +42,7 @@ class ConsensusAlgorithm(ABC):
         pass
 
     @abstractmethod
-    def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: NetworkTransport) -> Optional[Block]:
+    def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: 'NetworkTransport') -> Optional[Block]:
         """
         在节点间达成共识
         
@@ -89,6 +86,7 @@ class PoWConsensus(ConsensusAlgorithm):
         Returns:
             bool: 验证结果
         """
+        # 检查前一个区块哈希是否匹配
         if previous_block and block.previous_hash != previous_block.hash:
             return False
             
@@ -97,7 +95,12 @@ class PoWConsensus(ConsensusAlgorithm):
         block_hash = hashlib.sha256(hashlib.sha256(block_header.encode()).digest()).hexdigest()
         hash_value = int(block_hash, 16)
         
-        return hash_value <= self.target and block_hash == block.hash
+        # 检查工作量证明是否有效
+        if hash_value > self.target or block_hash != block.hash:
+            return False
+            
+        # 验证通过
+        return True
 
     def create_block(self, node: Node, previous_block: Optional[Block]) -> Optional[Block]:
         """
@@ -110,9 +113,7 @@ class PoWConsensus(ConsensusAlgorithm):
         Returns:
             Block: 新创建的区块，如果无法创建则返回None
         """
-        if not node.pending_transactions:
-            return None
-            
+        # 即使没有交易也要创建区块（空区块机制）
         transactions = node.pending_transactions[:self.max_transactions_per_block]
         previous_hash = previous_block.hash if previous_block else "0" * 64
         timestamp = int(time.time())
@@ -166,9 +167,9 @@ class PoWConsensus(ConsensusAlgorithm):
         block_header = f"{block.index}{block.previous_hash}{block.timestamp}{tx_data}{nonce}"
         return block_header
 
-    def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: NetworkTransport) -> Optional[Block]:
+    def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: 'NetworkTransport') -> Optional[Block]:
         """
-        在节点间达成共识
+        在节点间达成共识（使用并发挖矿方式）
         
         Args:
             nodes: 节点列表
@@ -178,28 +179,75 @@ class PoWConsensus(ConsensusAlgorithm):
         Returns:
             Block: 达成共识的区块，如果没有达成则返回None
         """
-        if not transactions:
-            print("[PoW] 无待处理交易，跳过挖矿")
-            return None
-            
+        # 不管有没有交易都继续执行（支持空块）
         print(f"[PoW] 开始工作量证明共识，节点数: {len(nodes)}, 交易数: {len(transactions)}")
         
         # 使用传输层广播交易
-        transport.broadcast_transactions(nodes, transactions)
-        print(f"[PoW] 已广播 {len(transactions)} 笔交易到网络")
+        if transport and transactions:
+            # 选择一个随机节点作为发送者
+            sender_node = random.choice(nodes)
+            transport.broadcast_transactions(sender_node.node_id, transactions)
+            print(f"[PoW] 已广播 {len(transactions)} 笔交易到网络")
             
-        # 模拟挖矿过程
+        # 将交易分发给所有节点
+        if transactions:
+            for node in nodes:
+                node.pending_transactions.extend(transactions)
+            
+        # 模拟挖矿过程 - 所有节点同时开始挖矿
         print("[PoW] 各节点开始挖矿...")
-        for i, node in enumerate(nodes):
+        
+        # 使用线程让所有节点同时挖矿
+        result_queue = queue.Queue()
+        threads = []
+        
+        def mine_block(node, result_queue):
             previous_block = node.get_latest_block()
             block = self.create_block(node, previous_block)
             if block:
-                print(f"[PoW] 节点 {node.node_id} 成功挖矿，nonce: {block.nonce}")
-                print(f"[PoW] 区块哈希: {block.hash[:16]}...")
-                return block
+                result_queue.put((node, block))
+        
+        # 启动所有节点的挖矿线程
+        for i, node in enumerate(nodes):
+            thread = threading.Thread(target=mine_block, args=(node, result_queue))
+            threads.append(thread)
+            thread.start()
+        
+        # 等待第一个完成的节点
+        winner_node = None
+        winner_block = None
+        try:
+            winner_node, winner_block = result_queue.get(timeout=30)  # 30秒超时
+            print(f"[PoW] 节点 {winner_node.node_id} 成功挖矿，nonce: {winner_block.nonce}")
+            print(f"[PoW] 区块哈希: {winner_block.hash[:16]}...")
+        except queue.Empty:
+            print("[PoW] 挖矿超时，没有节点成功挖到区块")
+        
+        # 等待所有线程结束
+        for thread in threads:
+            thread.join()
+        
+        # 将获胜区块添加到获胜节点的区块链中（这样我们就能通过区块链识别挖矿节点）
+        if winner_node and winner_block:
+            winner_node.add_block(winner_block)
+            
+            # 广播获胜区块到所有其他节点
+            if transport:
+                transport.broadcast_block(winner_node.node_id, winner_block)
                 
-        print("[PoW] 所有节点挖矿失败")
-        return None
+            # 其他节点接收并验证区块
+            for node in nodes:
+                if node != winner_node:
+                    # 验证区块
+                    latest_block = node.get_latest_block()
+                    if self.validate_block(winner_block, latest_block):
+                        # 验证通过，添加到区块链
+                        node.add_block(winner_block)
+                        print(f"[PoW] 节点 {node.node_id} 接受新区块 {winner_block.index}")
+                    else:
+                        print(f"[PoW] 节点 {node.node_id} 拒绝新区块 {winner_block.index}（验证失败）")
+        
+        return winner_block
 
 
 class PBFTConsensus(ConsensusAlgorithm):
@@ -242,22 +290,15 @@ class PBFTConsensus(ConsensusAlgorithm):
         Returns:
             Block: 新创建的区块，如果无法创建则返回None
         """
-        if not node.pending_transactions:
-            return None
-            
+        # 即使没有交易也要创建区块（空区块机制）
         transactions = node.pending_transactions[:self.max_transactions_per_block]
         previous_hash = previous_block.hash if previous_block else "0" * 64
         timestamp = time.time()
         
-        # 模拟PBFT的处理时间（包括预准备、准备和提交阶段）
-        # 根据交易数量添加适当的延迟
-        processing_time = len(transactions) * 0.001  # 每个交易0.001秒处理时间
-        time.sleep(processing_time)
-        
         block = Block(len(node.blockchain), previous_hash, timestamp, transactions)
         return block
 
-    def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: NetworkTransport) -> Optional[Block]:
+    def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: 'NetworkTransport') -> Optional[Block]:
         """
         在节点间达成共识
         
@@ -269,15 +310,13 @@ class PBFTConsensus(ConsensusAlgorithm):
         Returns:
             Block: 达成共识的区块，如果没有达成则返回None
         """
-        if not transactions:
-            print("[PBFT] 无待处理交易，跳过共识")
-            return None
-            
+        # 不管有没有交易都继续执行（支持空块）
         print(f"[PBFT] 开始实用拜占庭容错共识，节点数: {len(nodes)}, 交易数: {len(transactions)}")
         
         # 使用传输层广播交易
-        transport.broadcast_transactions(nodes, transactions)
-        print(f"[PBFT] 已广播 {len(transactions)} 笔交易到网络")
+        if transport and transactions:
+            transport.broadcast_transactions(nodes, transactions)
+            print(f"[PBFT] 已广播 {len(transactions)} 笔交易到网络")
         
         # 模拟网络传输延迟
         time.sleep(0.05)  # 50ms网络延迟
@@ -307,10 +346,24 @@ class PBFTConsensus(ConsensusAlgorithm):
         block = self.create_block(primary_node, previous_block)
         if block:
             print(f"[PBFT] 共识达成，区块高度: {block.index}, 区块哈希: {block.hash[:16]}...")
-        else:
-            print("[PBFT] 共识失败")
             
-        return block
+            # 广播区块到所有节点
+            if transport:
+                transport.broadcast_block(primary_node.node_id, block)
+            
+            # 所有节点接收并验证区块
+            for node in nodes:
+                if self.validate_block(block, node.get_latest_block()):
+                    node.add_block(block)
+                    print(f"[PBFT] 节点 {node.node_id} 添加新区块 {block.index}")
+                else:
+                    print(f"[PBFT] 节点 {node.node_id} 拒绝新区块 {block.index}（验证失败）")
+            
+            return block
+        else:
+            print("[PBFT] 共识失败，无法创建区块")
+            
+        return None
 
 
 class HotStuffConsensus(ConsensusAlgorithm):
@@ -318,17 +371,15 @@ class HotStuffConsensus(ConsensusAlgorithm):
     HotStuff共识算法实现
     """
     
-    def __init__(self, max_transactions_per_block: int = 256, pipeline_depth: int = 3):
+    def __init__(self, max_transactions_per_block: int = 256):
         """
         初始化HotStuff共识算法
         
         Args:
             max_transactions_per_block: 每个区块最大交易数
-            pipeline_depth: 流水线深度
         """
-        super().__init__(max_transactions_per_block)
-        self.pipeline_depth = pipeline_depth
-        self.current_leader = 0  # 当前领导者索引
+        self.max_transactions_per_block = max_transactions_per_block
+        self.leader_index = 0  # 领导者节点索引
     
     def validate_block(self, block: Block, previous_block: Optional[Block]) -> bool:
         """
@@ -356,30 +407,15 @@ class HotStuffConsensus(ConsensusAlgorithm):
         Returns:
             Block: 新创建的区块，如果无法创建则返回None
         """
-        if not node.pending_transactions:
-            return None
-            
+        # 即使没有交易也要创建区块（空区块机制）
         transactions = node.pending_transactions[:self.max_transactions_per_block]
         previous_hash = previous_block.hash if previous_block else "0" * 64
         timestamp = time.time()
         
-        # 模拟HotStuff的处理时间（包括多个投票阶段）
-        # 根据交易数量添加适当的延迟，确保处理时间不会太短
-        # 基础延迟确保即使交易很少也不会处理得太快
-        base_processing_time = 0.05  # 基础处理时间50ms
-        transaction_processing_time = len(transactions) * 0.0005  # 每个交易0.5ms处理时间
-        
-        # 模拟HotStuff三阶段投票的处理时间
-        # 流水线设计使并行处理成为可能，所以不需要乘以pipeline_depth
-        three_phase_voting_time = 0.03  # 三阶段投票时间
-        
-        processing_time = base_processing_time + transaction_processing_time + three_phase_voting_time
-        time.sleep(processing_time)
-        
         block = Block(len(node.blockchain), previous_hash, timestamp, transactions)
         return block
 
-    def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: NetworkTransport) -> Optional[Block]:
+    def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: 'NetworkTransport') -> Optional[Block]:
         """
         在节点间达成共识
         
@@ -391,55 +427,43 @@ class HotStuffConsensus(ConsensusAlgorithm):
         Returns:
             Block: 达成共识的区块，如果没有达成则返回None
         """
-        if not transactions:
-            print("[HotStuff] 无待处理交易，跳过共识")
-            return None
-            
+        # 不管有没有交易都继续执行（支持空块）
         print(f"[HotStuff] 开始HotStuff共识，节点数: {len(nodes)}, 交易数: {len(transactions)}")
         
-        # 使用传输层广播交易
-        transport.broadcast_transactions(nodes, transactions)
-        print(f"[HotStuff] 已广播 {len(transactions)} 笔交易到网络")
+        # 轮换领导者
+        leader_node = nodes[self.leader_index % len(nodes)]
+        self.leader_index += 1
+        print(f"[HotStuff] 领导者节点: {leader_node.node_id}")
         
-        # 模拟网络传输延迟
-        time.sleep(0.03)  # 30ms网络延迟
-        
-        # HotStuff实现：领导者轮换
-        leader_node = nodes[self.current_leader]
-        print(f"[HotStuff] 当前领导者: 节点 {leader_node.node_id}")
-        
-        # 提议阶段
-        print("[HotStuff] 领导者提议新区块")
-        time.sleep(0.02)
-        
-        # 投票阶段
-        print("[HotStuff] 节点对提议进行投票")
-        vote_count = len(nodes)  # 简化实现，假设所有节点都投票
-        time.sleep(0.02)
-        print(f"[HotStuff] 收到 {vote_count} 票")
-        
-        # 提交阶段
-        print("[HotStuff] 达成2f+1投票，提交区块")
-        time.sleep(0.02)
-        
+        # 领导者创建区块
         previous_block = leader_node.get_latest_block()
         block = self.create_block(leader_node, previous_block)
         
-        # 轮换领导者
-        self.current_leader = (self.current_leader + 1) % len(nodes)
-        print(f"[HotStuff] 领导者轮换至节点 {self.current_leader}")
-        
         if block:
-            print(f"[HotStuff] 共识达成，区块高度: {block.index}, 区块哈希: {block.hash[:16]}...")
-        else:
-            print("[HotStuff] 共识失败")
+            print(f"[HotStuff] 区块创建成功，区块高度: {block.index}, 区块哈希: {block.hash[:16]}...")
             
-        return block
+            # 广播区块到所有节点
+            if transport:
+                transport.broadcast_block(leader_node.node_id, block)
+            
+            # 所有节点接收并验证区块
+            for node in nodes:
+                if self.validate_block(block, node.get_latest_block()):
+                    node.add_block(block)
+                    print(f"[HotStuff] 节点 {node.node_id} 添加新区块 {block.index}")
+                else:
+                    print(f"[HotStuff] 节点 {node.node_id} 拒绝新区块 {block.index}（验证失败）")
+            
+            return block
+        else:
+            print("[HotStuff] 区块创建失败")
+            
+        return None
 
 
 class DumboConsensus(ConsensusAlgorithm):
     """
-    Dumbo共识算法实现
+    Dumbo共识算法实现（简化版）
     """
     
     def __init__(self, max_transactions_per_block: int = 256):
@@ -477,9 +501,7 @@ class DumboConsensus(ConsensusAlgorithm):
         Returns:
             Block: 新创建的区块，如果无法创建则返回None
         """
-        if not node.pending_transactions:
-            return None
-            
+        # 即使没有交易也要创建区块（空区块机制）
         transactions = node.pending_transactions[:self.max_transactions_per_block]
         previous_hash = previous_block.hash if previous_block else "0" * 64
         timestamp = time.time()
@@ -492,7 +514,7 @@ class DumboConsensus(ConsensusAlgorithm):
         block = Block(len(node.blockchain), previous_hash, timestamp, transactions)
         return block
 
-    def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: NetworkTransport) -> Optional[Block]:
+    def reach_consensus(self, nodes: List[Node], transactions: List[Transaction], transport: 'NetworkTransport') -> Optional[Block]:
         """
         在节点间达成共识
         
@@ -504,11 +526,13 @@ class DumboConsensus(ConsensusAlgorithm):
         Returns:
             Block: 达成共识的区块，如果没有达成则返回None
         """
-        if not transactions:
-            return None
-            
+        # 不管有没有交易都继续执行（支持空块）
+        print(f"[Dumbo] 开始Dumbo共识，节点数: {len(nodes)}, 交易数: {len(transactions)}")
+        
         # 使用传输层广播交易
-        transport.broadcast_transactions(nodes, transactions)
+        if transport and transactions:
+            transport.broadcast_transactions(nodes, transactions)
+            print(f"[Dumbo] 已广播 {len(transactions)} 笔交易到网络")
         
         # 模拟网络传输延迟
         time.sleep(0.1)  # 100ms网络延迟
@@ -517,4 +541,24 @@ class DumboConsensus(ConsensusAlgorithm):
         leader_node = nodes[0]
         previous_block = leader_node.get_latest_block()
         block = self.create_block(leader_node, previous_block)
-        return block
+        
+        if block:
+            print(f"[Dumbo] 共识达成，区块高度: {block.index}, 区块哈希: {block.hash[:16]}...")
+            
+            # 广播区块到所有节点
+            if transport:
+                transport.broadcast_block(leader_node.node_id, block)
+            
+            # 所有节点接收并验证区块
+            for node in nodes:
+                if self.validate_block(block, node.get_latest_block()):
+                    node.add_block(block)
+                    print(f"[Dumbo] 节点 {node.node_id} 添加新区块 {block.index}")
+                else:
+                    print(f"[Dumbo] 节点 {node.node_id} 拒绝新区块 {block.index}（验证失败）")
+            
+            return block
+        else:
+            print("[Dumbo] 共识失败，无法创建区块")
+            
+        return None

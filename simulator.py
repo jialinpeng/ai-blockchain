@@ -59,34 +59,42 @@ class BlockchainSimulator:
         self.block_tps_history: List[Dict] = []  # 存储区块TPS历史记录
         self.transaction_confirm_times: List[float] = []  # 存储交易确认时间
         
+        # 初始化节点
+        self._initialize_nodes()
+        
         # 初始化网络拓扑和传输层
-        self.topology = NetworkTopology(self.nodes)
-        self.topology.generate_topology(network_protocol)
-        self.transport = NetworkTransport(self.topology, network_protocol)
+        self._initialize_topology()
         
         # 初始化共识算法
-        if consensus_type == ConsensusType.POW:
-            self.consensus = PoWConsensus(max_transactions_per_block=self.max_transactions_per_block)
-        elif consensus_type == ConsensusType.PBFT:
-            self.consensus = PBFTConsensus(max_transactions_per_block=self.max_transactions_per_block)
-        elif consensus_type == ConsensusType.HOTSTUFF:
-            self.consensus = HotStuffConsensus(max_transactions_per_block=self.max_transactions_per_block)
-        elif consensus_type == ConsensusType.DUMBO:
-            self.consensus = DumboConsensus(max_transactions_per_block=self.max_transactions_per_block)
-
-        # 设置上一个区块的确认时间为模拟开始时间，以确保第一个区块也遵守出块间隔
-        self._last_block_confirm_time = time.time()
-        
-        # 最后初始化节点
-        self._initialize_nodes()
+        self._initialize_consensus()
 
     def _initialize_nodes(self):
         """初始化节点"""
         self.nodes = []
         for i in range(self.node_count):
-            node = Node(i, f"192.168.1.{i+1}", self.network_bandwidth)
+            node = Node(i, f"192.168.1.{i+1}")
             self.nodes.append(node)
 
+    def _initialize_topology(self):
+        """初始化网络拓扑"""
+        # 修复：使用正确的构造函数参数
+        self.topology = NetworkTopology(self.node_count, self.network_protocol)
+        self.topology.apply_to_nodes(self.nodes)
+        self.transport = NetworkTransport(self.topology, self.network_protocol)
+
+    def _initialize_consensus(self):
+        """初始化共识算法"""
+        if self.consensus_type == ConsensusType.POW:
+            self.consensus = PoWConsensus(max_transactions_per_block=self.max_transactions_per_block)
+        elif self.consensus_type == ConsensusType.PBFT:
+            self.consensus = PBFTConsensus(max_transactions_per_block=self.max_transactions_per_block)
+        elif self.consensus_type == ConsensusType.HOTSTUFF:
+            self.consensus = HotStuffConsensus(max_transactions_per_block=self.max_transactions_per_block)
+        elif self.consensus_type == ConsensusType.DUMBO:
+            self.consensus = DumboConsensus(max_transactions_per_block=self.max_transactions_per_block)
+
+        # 设置上一个区块的确认时间为模拟开始时间，以确保第一个区块也遵守出块间隔
+        self._last_block_confirm_time = time.time()
 
     def set_consensus_algorithm(self, consensus_type: ConsensusType):
         """
